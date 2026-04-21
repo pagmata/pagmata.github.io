@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 # OpenResPublica TruthChain — ORP Engine
 
 **Cryptographically verifiable barangay document issuance.**  
@@ -6,502 +5,426 @@ Every document gets a SHA-256 fingerprint, anchored to an immutable database, st
 
 ---
 
-## Contents
+## 🚀 Quick Start
 
-1. [What It Does](#what-it-does)
-2. [Architecture](#architecture)
-3. [Prerequisites](#prerequisites)
-4. [Setup (Ubuntu WSL2 — Windows)](#setup-ubuntu-wsl2--windows)
-5. [Setup (Termux proot-distro Ubuntu — Android)](#setup-termux-proot-distro-ubuntu--android)
-6. [First-Run Sequence](#first-run-sequence)
-7. [Daily Operation](#daily-operation)
-8. [File Structure](#file-structure)
-9. [Security Model](#security-model)
-10. [Troubleshooting](#troubleshooting)
+### Prerequisites
+
+- **Windows 10/11** with WSL2 enabled
+- **Ubuntu 22.04 LTS** WSL2 distro (recommended)
+- **4 GB RAM minimum** (8 GB recommended)
+- **10 GB free disk space**
+- **Internet connection** (for GitHub sync)
+
+### Installation (5 minutes)
+
+```bash
+# 1. Open WSL2 Ubuntu
+wsl -d Ubuntu
+
+# 2. Clone repository
+cd ~
+git clone https://github.com/openrespublica/openrespublica-core.git
+cd openrespublica-core
+
+# 3. Run setup (interactive)
+chmod +x master-bootstrap.sh
+./master-bootstrap.sh
+
+# 4. Import certificate in browser (Chrome/Firefox)
+# File: $HOME/.orp_engine/ssl/operator_01.p12
+
+# 5. Launch engine
+./run_orp.sh
+```
 
 ---
 
-## What It Does
+## 📋 What It Does
 
 An operator uploads a signed PDF barangay document. The engine:
 
-1. Computes a **SHA-256 fingerprint** — any tampering changes it completely
-2. **Anchors the hash** to a local immudb instance (append-only, Merkle tree)
-3. **GPG-signs** the audit record using an ephemeral key that lives only in RAM
-4. **Stamps the PDF** with a QR code linking to the public verification portal
-5. **Publishes** the record to GitHub Pages within 60–90 seconds
-6. Returns the stamped PDF to the operator for printing and issuance
+1. **Computes SHA-256 fingerprint** — any tampering changes it completely
+2. **Anchors the hash** to immudb (append-only, Merkle tree)
+3. **GPG-signs** the audit record using an ephemeral key (RAM-only)
+4. **Stamps the PDF** with a QR code linking to verification portal
+5. **Publishes** to GitHub Pages within 60–90 seconds
+6. **Returns** the stamped PDF for printing and issuance
 
-A citizen can later scan the QR code and independently verify the document — without trusting anyone, including the barangay office itself.
-
----
-
-## Architecture
-
-```
-Windows 10/11 (or Android)
-└── WSL2 Ubuntu (or Termux proot-distro Ubuntu)
-    ├── Nginx :9443            ← mTLS gateway (operator cert required)
-    │   └── Proxy → Gunicorn :5000
-    ├── Gunicorn               ← WSGI server (1 worker, 2 threads)
-    │   └── Flask main.py      ← PDF processing + crypto pipeline
-    ├── immudb :3322           ← immutable hash anchor
-    ├── /dev/shm/              ← ephemeral GPG RAM disk (wiped on exit)
-    └── docs/records/          ← JSON audit trail → GitHub Pages
-```
-
-**Public-facing** (GitHub Pages — static, no server):
-```
-openrespublica.github.io/
-├── index.html     ← verification portal
-├── records.html   ← public ledger
-├── about.html     ← system information
-└── docs/records/
-    ├── manifest.json       ← all records, newest first
-    └── <sha256hash>.json   ← individual record files
-```
+Citizens can scan the QR code and independently verify the document — without trusting anyone, including the barangay office itself.
 
 ---
 
-## Prerequisites
+## 🏗️ Architecture
 
-### Hardware
-
-| Component | Minimum | Recommended |
-|-----------|---------|-------------|
-| RAM | 4 GB | 8 GB |
-| Storage | 10 GB free | 20 GB free |
-| CPU | 2 cores | 4 cores |
-| OS | Windows 10 (64-bit) | Windows 11 |
-
-### Software (Windows side)
-
-- **WSL2** enabled — `wsl --install` in PowerShell (Admin)
-- **Ubuntu** WSL2 distro — `wsl --install -d Ubuntu`
-- **Windows Terminal** (recommended) — for the gum UI launcher
-- **Git for Windows** (optional) — for the `.ps1` launcher
-
-### Software (Ubuntu side — installed automatically by setup.sh)
-
-- Python 3.10+, pip, venv
-- Go toolchain (for building immudb)
-- openssl, git, make, clang, cmake
-- nginx
-- netcat-openbsd (for vault readiness polling)
-- gnupg2
+```
+Windows 10/11 (Host)
+├── WSL2 Ubuntu 22.04 LTS (Guest)
+│   ├── Nginx :9443 (mTLS Gateway)
+│   │   ├── Client Certificate Required
+│   │   ├── TLS 1.2+ Only
+│   │   └── Strong Cipher Suites
+│   │
+│   ├── Gunicorn :5000 (WSGI App Server)
+│   │   ├── 1 Worker, 2 Threads
+│   │   └── 120s Timeout
+│   │
+│   ├── immudb :3322 (Immutable Ledger)
+│   │   ├── Append-only Database
+│   │   ├── Merkle Tree Verification
+│   │   └── Authentication Required
+│   │
+│   ├── Flask main.py (PDF Pipeline)
+│   │   ├── SHA-256 Hashing
+│   │   ├── QR Code Generation
+│   │   └── GPG Signing
+│   │
+│   └── GPG Ephemeral Keys (/dev/shm RAM)
+│       ├── Ed25519 Algorithm
+│       ├── 1-Day Expiry
+│       └── Auto-wiped on Shutdown
+│
+└── SSH/Git (GitHub Sync)
+    └── Ephemeral SSH Key (RAM-only)
+```
 
 ---
 
-## Setup (Ubuntu WSL2 — Windows)
+## 📖 Full Setup Guide
 
-### 1. Open Ubuntu WSL2
-
-```powershell
-# In PowerShell:
-wsl -d Ubuntu
-```
-
-### 2. Clone the repository
+### Step 1: Environment Configuration
 
 ```bash
-cd ~
-git clone https://github.com/openrespublica/openrespublica.github.io.git
-cd openrespublica.github.io
+./orp-env-bootstrap.sh
 ```
 
-### 3. Run the master setup script
+**Prompts:**
+- **LGU Name**: e.g., "Barangay Buñao"
+- **Signer Name**: e.g., "HON. MARCO FERNANDEZ"
+- **Operator Email**: e.g., "operator@barangay.gov.ph"
+- **GitHub Portal URL**: e.g., "https://github.com/yourorg/verify"
+
+### Step 2: Build immudb
 
 ```bash
-chmod +x setup.sh
-./setup.sh
+./immudb_setup.sh              # Build v1.10.0 from source
+./immudb-setup-operator.sh     # Create database + operator user
 ```
 
-`setup.sh` runs all 9 steps in order and is **idempotent** — safe to re-run:
-
-| Step | Script | What it does |
-|------|--------|--------------|
-| 1 | `orp-timezone-setup.sh` | Sets timezone to Asia/Manila |
-| 2 | `orp-env-bootstrap.sh` | Creates `.env` with your LGU details |
-| 3 | `python_prep.sh` | Creates `.venv` and installs Python dependencies |
-| 4 | `immudb_setup.sh` | Builds immudb binaries from source |
-| 5 | `immudb-setup-operator.sh` | Creates DB + operator user + `~/.identity/db_secrets.env` |
-| 6 | `orp-pki-setup.sh` | Generates Sovereign Root CA, server cert, operator cert |
-| 7 | `nginx-setup.sh` | Installs nginx and deploys mTLS configuration |
-| 8 | `repo-init.sh` | Creates `docs/records/`, `.gitignore`, initializes git |
-
-### 4. Install the operator certificate in Chrome/Edge
-
-After `orp-pki-setup.sh` runs, you will have `operator_01.p12` in your PKI directory (default: `~/orp_engine/ssl/`).
-
-**Chrome / Edge:**
-```
-Settings → Privacy and security → Security →
-Manage certificates → Personal → Import →
-Select operator_01.p12 → Enter export password
-```
-
-**Firefox:**
-```
-Settings → Privacy & Security → View Certificates →
-Your Certificates → Import →
-Select operator_01.p12 → Enter export password
-```
-
-### 5. Launch the engine
+### Step 3: Generate Certificates
 
 ```bash
+./orp-pki-setup.sh
+# Creates: $HOME/.orp_engine/ssl/
+```
+
+### Step 4: Deploy Nginx
+
+```bash
+./nginx-setup.sh
+# Deploys: /etc/nginx/conf.d/orp_engine.conf
+```
+
+### Step 5: Python Environment
+
+```bash
+./python_prep.sh
+# Creates: $REPO_DIR/.venv
+```
+
+### Or Automate All Steps
+
+```bash
+./master-bootstrap.sh
+```
+
+---
+
+## 🎯 Daily Operation
+
+### Start the Engine
+
+```bash
+cd ~/openrespublica-core
 ./run_orp.sh
 ```
 
-Or with the gum UI (requires `gum` installed):
-```bash
-./run_orp-gum.sh
-```
+**First launch only:**
+1. SSH public key displayed
+2. Go to: GitHub.com → Settings → SSH Keys → New SSH Key
+3. Paste the key
+4. Return and press ENTER
 
-Or from Windows PowerShell:
-```powershell
-powershell -ExecutionPolicy Bypass -File Launch_ORP.ps1
-```
-
----
-
-## Setup (Termux proot-distro Ubuntu — Android)
-
-### 1. Install Termux and proot-distro
-
-```bash
-pkg install proot-distro
-proot-distro install ubuntu
-proot-distro login ubuntu
-```
-
-### 2. Install base dependencies inside Ubuntu
-
-```bash
-apt-get update
-apt-get install -y git curl wget sudo
-```
-
-### 3. Clone and run setup
-
-```bash
-cd ~
-git clone https://github.com/openrespublica/openrespublica.github.io.git
-cd openrespublica.github.io
-chmod +x setup.sh
-./setup.sh
-```
-
-> **Note:** On Termux proot, nginx runs without systemd. The engine uses
-> native `nginx` signals (`nginx`, `nginx -s reload`) — no `systemctl` needed.
-
-### 4. Launch
-
-```bash
-./run_orp.sh
-```
-
-The Termux launcher will copy the SSH public key to the clipboard automatically if `termux-clipboard-set` is available.
-
----
-
-## First-Run Sequence
-
-The first time you run `run_orp.sh` or `run_orp-gum.sh`:
-
-```
-1. orp_load_env         → loads .env and ~/.identity/db_secrets.env
-2. orp_forge_identity   → generates ephemeral Ed25519 key in /dev/shm
-                          exports: GNUPGHOME, SSH_AUTH_SOCK, KEY_ID
-3. orp_start_vault      → starts immudb on :3322 (or attaches if running)
-4. orp_configure_git    → sets git user.name, user.email, signingkey
-5. orp_refresh_gateway  → validates nginx config, starts/reloads nginx
-6. Display session keys → SSH public key + GPG public key shown
-7. PAUSE                → operator pastes SSH key to GitHub Settings
-8. ENTER                → orp_launch_engine starts Gunicorn
-```
-
-**GitHub SSH key registration** (required for public ledger sync):
-
-```
-GitHub.com → Settings → SSH and GPG Keys → New SSH Key →
-Paste the key shown in the terminal → Save
-```
-
-This must be done at every session start because the SSH key is ephemeral — it lives in RAM and is wiped when the engine shuts down.
-
----
-
-## Daily Operation
-
-### Starting the engine
-
-```bash
-cd ~/openrespublica.github.io
-./run_orp.sh
-```
-
-The terminal will prompt:
-```
-Enter password for vault user [orp_operator]: ████
-```
-
-Enter the immudb operator password you set during `immudb-setup-operator.sh`.
-
-### Accessing the portal
-
-Open Chrome or Edge (with the operator certificate installed):
+### Access the Portal
 
 ```
 https://localhost:9443
 ```
 
-If you see **"Sovereign Identity Required"** — your browser certificate is not installed or was not selected. See Step 4 in the Setup section.
+**Browser Requirements:**
+- Chrome, Edge, or Firefox
+- operator_01.p12 certificate imported
+- JavaScript enabled
 
-### Issuing a document
+### Stop the Engine
 
-1. Open the portal at `https://localhost:9443`
-2. Select **PDF Stamp & Anchor** in the sidebar
-3. Upload the signed PDF
-4. Select the document type
-5. Click **Stamp, Hash & Anchor to Ledger**
-6. Download the stamped PDF with the QR code
-7. The public ledger updates within 60–90 seconds
+```
+Press Ctrl+C in terminal
+```
 
-### Locking the engine
-
-Click **🔒 Lock Engine** in the portal topbar.
-
-This sends a signal to Gunicorn → triggers `graceful_shutdown()` in Python → the shell cleanup trap fires → wipes the GPG RAM disk → session is dead.
-
-Or press `Ctrl+C` in the terminal.
+**Cleanup:**
+- GPG keys wiped from RAM
+- Sessions terminated securely
+- Databases remain intact
 
 ---
 
-## File Structure
+## 📂 File Structure
 
 ```
-openrespublica.github.io/
+openrespublica-core/
+├── Setup Orchestrators
+│   ├── master-bootstrap.sh          ← Main entry point
+│   ├── orp-env-bootstrap.sh         ← Environment setup
+│   └── nginx-setup.sh               ← Nginx deployment
 │
-├── main.py                      ← Flask application (PDF pipeline)
-├── requirements.txt             ← Python dependencies
+├── Component Setup
+│   ├── immudb_setup.sh              ← Build immudb
+│   ├── immudb-setup-operator.sh     ← DB + user
+│   ├── orp-pki-setup.sh             ← Certificates
+│   ├── orp-timezone-setup.sh        ← Timezone
+│   └── python_prep.sh               ← Python venv
 │
-├── templates/
-│   └── portal.html              ← Operator portal (Jinja2 template)
+├── Engine Launch
+│   ├── run_orp.sh                   ← Simple launcher
+│   ├── run_orp-gum.sh               ← Interactive launcher
+│   └── _orp_core.sh                 ← Shared functions
 │
-├── static/
-│   ├── css/style.css            ← Operator portal styles
-│   └── js/portal.js             ← Operator portal behaviour
+├── Application
+│   ├── main.py                      ← Flask app
+│   ├── requirements.txt             ← Python deps
+│   ├── templates/                   ← HTML templates
+│   └── static/                      ← CSS/JS
 │
-├── docs/                        ← GitHub Pages root
-│   ├── records/
-│   │   ├── manifest.json        ← All records, newest first (auto-generated)
-│   │   └── <sha256>.json        ← Individual record files (auto-generated)
-│   └── control_number.txt       ← Last issued control number (auto-generated)
+├── Configuration
+│   └── orp_engine.conf.tpl          ← Nginx template
 │
-├── index.html                   ← Public: verification portal
-├── records.html                 ← Public: public ledger
-├── about.html                   ← Public: system information
-├── verify.html                  ← Public: QR code verification landing
-├── ledger.js                    ← Public: ledger table rendering
-├── verify.js                    ← Public: verification logic
-├── style.css                    ← Public: shared GitHub Pages styles
-│
-├── _orp_core.sh                 ← Shared boot functions (source only)
-├── run_orp.sh                   ← Plain terminal launcher
-├── run_orp-gum.sh               ← gum UI launcher (Windows Terminal)
-├── Launch_ORP.ps1               ← Windows PowerShell igniter
-│
-├── setup.sh                     ← Master setup orchestrator
-├── orp-env-bootstrap.sh         ← Creates .env
-├── python_prep.sh               ← Creates .venv + installs deps
-├── immudb_setup.sh              ← Builds immudb binaries
-├── immudb-setup-operator.sh     ← Creates DB + user + db_secrets.env
-├── orp-pki-setup.sh             ← Generates all certificates
-├── nginx-setup.sh               ← Installs nginx + deploys config
-├── orp_engine.conf.tpl          ← Nginx config template
-├── repo-init.sh                 ← Creates docs/records/, .gitignore
-├── orp-timezone-setup.sh        ← Sets Asia/Manila timezone
-│
-├── .env                         ← NOT in git. Created by orp-env-bootstrap.sh
-└── .gitignore                   ← Excludes .env, .venv, .orp_vault/
+└── Documentation
+    ├── README.md                    ← This file
+    ├── LICENSE
+    └── ORP_WHITEPAPER.md
 
-~/.identity/
-└── db_secrets.env               ← NOT in repo. Created by immudb-setup-operator.sh
-                                    Contains: IMMUDB_USER, IMMUDB_DB
+Generated Directories:
 
-~/orp_engine/ssl/                ← Default PKI directory
-├── sovereign_root.key           ← Root CA private key (KEEP SAFE)
-├── sovereign_root.crt           ← Root CA certificate (share with operators)
-├── orp_server.key               ← Nginx TLS private key
-├── orp_server.crt               ← Nginx TLS certificate
-├── operator_01.key              ← Operator client private key
-├── operator_01.crt              ← Operator client certificate
-└── operator_01.p12              ← Browser import bundle (KEEP SAFE)
+$HOME/.orp_engine/ssl/              ← PKI Directory
+├── sovereign_root.crt              ← Root CA (public)
+├── sovereign_root.key              ← Root CA (private)
+├── orp_server.crt                  ← Server TLS
+├── orp_server.key                  ← Server TLS (private)
+├── operator_01.crt                 ← Client cert
+├── operator_01.key                 ← Client cert (private)
+└── operator_01.p12                 ← Browser bundle
 
-~/.orp_vault/
-├── data/                        ← immudb data (never delete)
-├── immudb.pid                   ← immudb process ID
-└── immudb.log                   ← immudb logs
+$HOME/.orp_vault/                   ← immudb Data
+├── data/                           ← Databases
+├── immudb.log                      ← Logs
+└── immudb.pid                      ← Process ID
+
+$HOME/.identity/                    ← Secrets (600 mode)
+└── db_secrets.env                  ← immudb credentials
+
+$REPO/.env                          ← Configuration (600 mode)
+└── LGU settings, paths, ports
 ```
 
 ---
 
-## Security Model
+## 🔒 Security Model
 
-### Layered defense
+### 5-Layer Defense
 
 ```
-Layer 1 — Network:    mTLS at Nginx (:9443)
-                      No valid operator_01.p12 = no access
+Layer 1 — Network
+├── mTLS at Nginx (:9443)
+├── Client certificate required
+└── No valid cert = HTTP 495/496
 
-Layer 2 — Identity:   Ephemeral Ed25519 key in /dev/shm
-                      Generated fresh every session, wiped on exit
+Layer 2 — Identity
+├── Ephemeral Ed25519 key (/dev/shm)
+├── Generated fresh every session
+├── 1-day expiry
+└── Auto-wiped on shutdown
 
-Layer 3 — Integrity:  SHA-256 hash + immudb anchor
-                      Tampering changes the hash; immudb detects it
+Layer 3 — Integrity
+├── SHA-256 fingerprinting
+├── immudb Merkle tree anchor
+└── Tampering detectable
 
-Layer 4 — Audit:      GPG-signed JSON record + public GitHub ledger
-                      Cryptographically verifiable by anyone, anywhere
+Layer 4 — Audit
+├── GPG-signed JSON records
+├── Public GitHub ledger
+└── Cryptographically verifiable
 
-Layer 5 — Privacy:    Only the hash is stored, never the document
-                      Compliant with RA 10173 (Data Privacy Act 2012)
+Layer 5 — Privacy
+├── No personal data stored
+├── Hashes only
+└── Compliant with RA 10173
 ```
 
-### Ephemeral key lifecycle
+### Ephemeral Key Lifecycle
 
 ```
 run_orp.sh starts
     ↓
 orp_forge_identity()
-    ↓ creates GNUPGHOME in /dev/shm (RAM only)
-    ↓ generates Ed25519 key (expires in 1 day)
+    ↓ creates GNUPGHOME in /dev/shm
+    ↓ generates Ed25519 key (1-day expiry)
     ↓ exports SSH_AUTH_SOCK, KEY_ID
     ↓
-Session active — key usable for signing and git auth
+Session active (key usable for signing + git auth)
     ↓
-Engine shuts down (Ctrl+C or Lock Engine button)
+Engine shutdown (Ctrl+C or timeout)
     ↓
 orp_cleanup()
     ↓ gpgconf --kill all
     ↓ rm -rf /dev/shm/.orp-gpg-* /dev/shm/orp_identity
     ↓
-RAM wiped — key is gone permanently
+RAM wiped — key permanently deleted
 ```
-
-### What is and is not stored on disk
-
-| Data | Location | Persists |
-|------|----------|----------|
-| SHA-256 hash | immudb (`~/.orp_vault/data/`) | Forever |
-| JSON audit record | `docs/records/<hash>.json` | Forever (git) |
-| GPG signature | Inside JSON record | Forever (git) |
-| PDF document | Never stored | — |
-| Operator password | Never stored | — |
-| Private keys (session) | `/dev/shm/` only | Until shutdown |
 
 ---
 
-## Troubleshooting
+## 🔧 Troubleshooting
 
-### "CRITICAL: db_secrets.env not found"
+### ".env file missing"
 
 ```bash
-# Re-run the operator setup:
+./orp-env-bootstrap.sh
+```
+
+### "db_secrets.env not found"
+
+```bash
 ./immudb-setup-operator.sh
 ```
 
-### "Vault already running. Connecting." but Flask can't connect
-
-```bash
-# immudb may be running on a different port or crashed.
-pkill immudb
-./run_orp.sh
-```
-
-### "Nginx config test failed"
+### "Nginx test failed"
 
 ```bash
 sudo nginx -t
-# Read the output — it tells you the exact line number
-sudo cat /etc/nginx/conf.d/orp_engine.conf
+cat /etc/nginx/conf.d/orp_engine.conf
 ```
 
-### Browser shows "Sovereign Identity Required" (495/496)
+### "Browser shows Sovereign Identity Required (495/496)"
 
-The browser did not present the operator certificate. Check:
-1. `operator_01.p12` is imported in the browser
-2. When prompted by the browser, select the ORP Operator certificate
-3. The certificate has not expired (1-year validity from `orp-pki-setup.sh`)
+1. Open browser settings
+2. Import `$HOME/.orp_engine/ssl/operator_01.p12`
+3. When prompted, select the ORP Operator certificate
+4. Retry https://localhost:9443
 
-To check certificate expiry:
+**If certificate expired (1 year):**
+
 ```bash
-openssl x509 -noout -dates -in ~/orp_engine/ssl/operator_01.crt
+./orp-pki-setup.sh      # Re-generate
+# Then re-import in browser
 ```
 
-To renew: re-run `orp-pki-setup.sh` and re-import the new `operator_01.p12`.
+### "immudb ACCESS DENIED"
 
-### "GPG key generation timed out after 10s"
-
-```bash
-# The system may be under load. Retry:
-./run_orp.sh
-
-# Or check if a stale GNUPGHOME is blocking:
-ls /dev/shm/.orp-gpg-*
-rm -rf /dev/shm/.orp-gpg-*
-```
-
-### Public ledger not updating after 90 seconds
+Password mismatch. Reset:
 
 ```bash
-# Check git sync — the background thread logs to the console:
-# Look for: "✅ TruthChain synchronized" or "❌ Git sync error"
-
-# Common causes:
-# 1. SSH key not added to GitHub Settings this session
-# 2. No internet connection
-# 3. Git conflict — the engine resolves with --rebase -X ours automatically
-```
-
-### immudb "ACCESS DENIED"
-
-The operator password entered at startup does not match the one set during `immudb-setup-operator.sh`.
-
-```bash
-# Reset the operator password (requires superadmin):
 ~/bin/immuadmin login immudb
 ~/bin/immuadmin user changepassword orp_operator
 ```
 
+### "GPG key generation timed out"
+
+System under load. Retry:
+
+```bash
+./run_orp.sh
+
+# Or clean stale GPG home:
+ls /dev/shm/.orp-gpg-*
+rm -rf /dev/shm/.orp-gpg-*
+```
+
+### "Vault already running but Flask can't connect"
+
+immudb may have crashed:
+
+```bash
+pkill immudb
+./run_orp.sh
+```
+
+### "Python venv not found"
+
+```bash
+./python_prep.sh
+```
+
 ---
 
-## Legal & Compliance
+## 📊 Performance Notes
 
-| Requirement | Implementation |
-|-------------|---------------|
-| RA 10173 — Data Privacy Act 2012 | No personal data stored — only document hashes |
-| RA 11032 — Ease of Doing Business | Documents issued with traceable control numbers |
-| RA 11337 — Innovative Startup Act | System registered under DTI (PORE606818386933) |
-| Civil Service Commission | Human review required before document issuance |
+| Component | Resource | Notes |
+|-----------|----------|-------|
+| **Nginx** | ~50 MB | Compiled from source |
+| **immudb** | ~100 MB | Go binary, lightweight |
+| **Python** | ~300 MB | Flask + dependencies |
+| **GPG** | ~50 MB | Ephemeral, RAM only |
+| **Total** | ~500 MB | Excluding data |
 
----
-
-## About
-
-**OpenResPublica TruthChain** is developed by **Marco Catapusan Fernandez**,  
-registered under DTI as *OpenResPublica Information Technology Solutions*  
-(Business Name No. 7643594, valid Dec 22 2025 – Dec 22 2030).
-
-Deployed at Barangay Buñao, Dumaguete City, Negros Oriental, Philippines.
-
-> *"A public servant's word must be written not just in ink, but in mathematics —  
-> so that no power on earth can erase it."*
+**Startup time:** 30-60 seconds (first launch includes key generation)
 
 ---
 
-*Secured by immudb · Ed25519 · SHA-256 · mTLS · OpenPGP*
-=======
-# openrespublica-core
-Official setup wizard and documentation for OpenResPublica (ORP) Sovereign Nodes. A zero-trust, verifiable civic infrastructure system built for Local Government Units utilizing immutable ledgers and mTLS gateways.
->>>>>>> 65e754ce974b099ee7bf330b188b25371e28828d
+## ⚖️ Legal & Compliance
+
+| Regulation | Requirement | Implementation |
+|-----------|------------|-----------------|
+| **RA 10173** | Data Privacy Act 2012 | No personal data stored — only hashes |
+| **RA 11032** | Ease of Doing Business | Traceable control numbers per document |
+| **RA 11337** | Innovative Startup Act | DTI registered (PORE606818386933) |
+| **Civil Service Commission** | Human review | Required before document issuance |
+
+---
+
+## 📞 Support
+
+For issues or questions:
+
+1. Check the **Troubleshooting** section above
+2. Review `$HOME/orp-setup.log` for detailed logs
+3. Check `/etc/nginx/conf.d/orp_engine.conf` for nginx config
+4. Review `~/.orp_vault/immudb.log` for database logs
+
+---
+
+## 👨‍💻 About
+
+**OpenResPublica TruthChain** — Sovereign document verification system for Local Government Units (LGUs).
+
+Developed by **Marco Catapusan Fernandez**
+- Registered under DTI as OpenResPublica Information Technology Solutions
+- Business Name: #7643594 (Valid Dec 22, 2025 – Dec 22, 2030)
+- Deployed at Barangay Buñao, Dumaguete City, Negros Oriental, Philippines
+
+> *"A public servant's word must be written not just in ink, but in mathematics — so that no power on earth can erase it."*
+
+---
+
+## 🔐 Technology Stack
+
+**Secured by:**
+- **immudb** — Immutable database with Merkle trees
+- **Ed25519** — Modern elliptic curve cryptography
+- **SHA-256** — Cryptographic hashing
+- **mTLS** — Mutual TLS authentication
+- **OpenPGP** — Digital signatures
+- **Flask** — Python web framework
+- **Nginx** — Reverse proxy gateway
+- **Git** — Version control & sync
+
+**License:** Proprietary — Open Respublica Information Technology Solutions

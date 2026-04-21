@@ -1,54 +1,43 @@
 #!/usr/bin/env bash
 # orp-timezone-setup.sh
-# Enforce Philippine Standard Time (Asia/Manila) across Termux, WSL2, Fedora Proot, or Linux.
+# Set Asia/Manila timezone for WSL2
+
 set -euo pipefail
 
+echo "=== Timezone Configuration (WSL2) ==="
+
 TARGET_TZ="Asia/Manila"
-LOG_FILE="$HOME/fedora-timezone.log"
+LOG_FILE="$HOME/orp-timezone-setup.log"
 
-# Detect environment
-detect_env() {
-  if [ -n "${WSL_DISTRO_NAME:-}" ]; then
-    echo "wsl"
-  elif command -v termux-info >/dev/null 2>&1; then
-    echo "termux"
-  elif [ -f "/etc/fedora-release" ]; then
-    echo "fedora"
-  elif [ -f "/etc/os-release" ]; then
-    . /etc/os-release
-    echo "$ID"
-  else
-    echo "unknown"
-  fi
-}
+echo "[*] Setting system timezone to $TARGET_TZ..."
 
-ENV_TYPE=$(detect_env)
+# Set /etc/localtime
+if sudo ln -sf "/usr/share/zoneinfo/$TARGET_TZ" /etc/localtime 2>/dev/null; then
+  echo "[✓] System timezone configured"
+else
+  echo "[!] Could not set system timezone (may need sudo password)"
+fi
 
-echo "=== Timezone Setup ==="
-echo "[*] Detected environment: $ENV_TYPE"
+# Also set environment variable for WSL2 sessions
+if ! grep -q "export TZ=" "$HOME/.bashrc" 2>/dev/null; then
+  echo "export TZ=\"$TARGET_TZ\"" >> "$HOME/.bashrc"
+  echo "[✓] Added TZ to ~/.bashrc"
+else
+  echo "[✓] TZ already in ~/.bashrc"
+fi
 
-case "$ENV_TYPE" in
-  fedora|centos|rhel|debian|ubuntu)
-    echo "[*] Setting system timezone via /etc/localtime"
-    sudo ln -sf "/usr/share/zoneinfo/$TARGET_TZ" /etc/localtime
-    ;;
-  termux)
-    echo "[*] Termux detected — setting TZ environment variable only"
-    echo "export TZ=\"$TARGET_TZ\"" >> "$HOME/.bashrc"
-    ;;
-  wsl)
-    echo "[*] WSL detected — setting TZ environment variable only"
-    echo "export TZ=\"$TARGET_TZ\"" >> "$HOME/.bashrc"
-    ;;
-  *)
-    echo "[!] Unknown environment — falling back to TZ export"
-    echo "export TZ=\"$TARGET_TZ\"" >> "$HOME/.bashrc"
-    ;;
-esac
-
+# Export for current session
 export TZ="$TARGET_TZ"
 current_time=$(date)
-echo "Timezone set to: $current_time"
 
-# Append to log file
-echo "[$current_time] $ENV_TYPE login timezone enforced: $TARGET_TZ" >> "$LOG_FILE"
+echo "[✓] Current timezone: $current_time"
+
+# Log
+{
+  echo "=== Timezone Setup Log ==="
+  echo "Timestamp: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  echo "Timezone: $TARGET_TZ"
+  echo "System time: $current_time"
+} >> "$LOG_FILE"
+
+echo "[✓] Timezone setup complete"

@@ -1,125 +1,219 @@
 #!/usr/bin/env bash
-# master-bootstrap.sh — Run full first-run bootstrap or CI mode
+# master-bootstrap.sh — ORP Engine Master Setup Orchestrator
+# ─────────────────────────────────────────────────────────────────
+# Runs every setup script in the correct order on a fresh Ubuntu
+# WSL2 or Termux proot-distro Ubuntu environment.
+#
 # Usage:
-#   ./master-bootstrap.sh          # interactive first-run (runs orp-env-bootstrap.sh if .env missing)
-#   CI=true ./master-bootstrap.sh  # non-interactive CI mode (reads required env vars)
+#   chmod +x master-bootstrap.sh && ./master-bootstrap.sh
+#
+# Idempotent — safe to re-run on an existing installation.
+# Each step checks whether it has already been completed and
+# skips gracefully if so.
+#
+# Steps (in order):
+#   1/9  Timezone              → orp-timezone-setup.sh
+#   2/9  Environment (.env)    → orp-env-bootstrap.sh
+#   3/9  Python venv           → python_prep.sh
+#   4/9  Build immudb          → immudb_setup.sh
+#   5/9  immudb operator DB    → immudb-setup-operator.sh
+#   6/9  Sovereign PKI (mTLS)  → orp-pki-setup.sh
+#   7/9  Nginx gateway         → nginx-setup.sh
+#   8/9  Repository structure  → repo-init.sh
+#   9/9  Setup verification    → (summary only)
+# ─────────────────────────────────────────────────────────────────
+
 set -euo pipefail
 
-REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-LOG_FILE="${LOG_FILE:-$HOME/universal-setup.log}"
-ENV_FILE="$REPO_DIR/.env"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+LOG_FILE="${LOG_FILE:-$HOME/orp-setup.log}"
+ENV_FILE="$SCRIPT_DIR/.env"
 
-# Scripts (expected to be in repo root)
-SCRIPTS=(
-  "orp-env-bootstrap.sh"
-  "orp-timezone-setup.sh"
-  "immudb_setup.sh"
-  "immudb-setup-operator.sh"
-  "orp-pki-setup.sh"
-  "python_prep.sh"
+# ── Colour helpers ────────────────────────────────────────────────
+RED='\033[0;31m'; GREEN='\033[0;32m'; GOLD='\033[0;33m'
+CYAN='\033[0;36m'; BOLD='\033[1m'; DIM='\033[2m'; NC='\033[0m'
+
+hdr()  { printf "\n${BOLD}${CYAN}╔══════════════════════════════════════════╗${NC}\n"
+         printf "${BOLD}${CYAN}║  %-40s║${NC}\n" "$1"
+         printf "${BOLD}${CYAN}╚══════════════════════════════════════════╝${NC}\n"; }
+ok()   { printf "${GREEN}[✔]${NC} %s\n" "$1" | tee -a "$LOG_FILE"; }
+info() { printf "${CYAN}[*]${NC} %s\n" "$1" | tee -a "$LOG_FILE"; }
+warn() { printf "${GOLD}[!]${NC} %s\n" "$1" | tee -a "$LOG_FILE"; }
+die()  { printf "${RED}[✘] ERROR: %s${NC}\n" "$1" >&2 | tee -a "$LOG_FILE"; exit 1; }
+log()  { printf '[%s] %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*" >> "$LOG_FILE"; }
+
+# ── Required scripts ─────────────────────────────────────────────
+REQUIRED_SCRIPTS=(
+    "orp-timezone-setup.sh"
+    "orp-env-bootstrap.sh"
+    "python_prep.sh"
+    "immudb_setup.sh"
+    "immudb-setup-operator.sh"
+    "orp-pki-setup.sh"
+    "nginx-setup.sh"
+    "repo-init.sh"
 )
 
-# Helper: log and echo
-log() { printf '[%s] %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*" | tee -a "$LOG_FILE"; }
+# ── Banner ────────────────────────────────────────────────────────
+clear
+printf "${BOLD}${CYAN}"
+cat <<'BANNER'
+  ╔═══════════════════════════════════════════════════════════╗
+  ║    OPENRESPUBLICA — ORP ENGINE MASTER BOOTSTRAP          ║
+  ║    TruthChain Sovereign Document Issuance System         ║
+  ╚═══════════════════════════════════════════════════════════╝
+BANNER
+printf "${NC}"
 
-# Check required scripts exist
-for s in "${SCRIPTS[@]}"; do
-  if [ ! -f "$REPO_DIR/$s" ]; then
-    log "ERROR: Required script missing: $s"
-    exit 1
-  fi
+printf "\n  ${DIM}This script will set up a complete ORP Engine environment${NC}\n"
+printf "  ${DIM}on Ubuntu WSL2 (Windows) or Termux proot-distro (Android).${NC}\n\n"
+printf "  ${BOLD}Log file:${NC} %s\n\n" "$LOG_FILE"
+
+log "Bootstrap started at $(date)"
+log "SCRIPT_DIR: $SCRIPT_DIR"
+
+# ── Verify we are on Ubuntu ───────────────────────────────────────
+if [ -f /etc/os-release ]; then
+    # shellcheck disable=SC1091
+    . /etc/os-release
+    if [[ "${ID:-}" != "ubuntu" ]]; then
+        warn "Detected distro: ${ID:-unknown}. This script targets Ubuntu."
+        warn "Continuing anyway — some steps may need manual adjustment."
+    else
+        ok "Ubuntu ${VERSION_ID:-} detected."
+    fi
+fi
+
+# ── Verify required scripts exist ────────────────────────────────
+info "Verifying all setup scripts are present..."
+for script in "${REQUIRED_SCRIPTS[@]}"; do
+    if [ ! -f "$SCRIPT_DIR/$script" ]; then
+        die "Missing script: $script — please re-clone the repository."
+    fi
 done
+ok "All required scripts found."
 
-# CI mode detection
-CI_MODE="${CI:-false}"
-if [ "$CI_MODE" = "true" ] || [ "$CI_MODE" = "1" ]; then
-  CI_MODE=true
-else
-  CI_MODE=false
+# ── Prompt for confirmation ───────────────────────────────────────
+printf "\n"
+warn "This script will install packages and configure system services."
+warn "You may be prompted for your sudo password during setup."
+printf "\n"
+read -rp "  Press ENTER to begin, or Ctrl+C to abort... "
+
+# ── Helper: run a named step ──────────────────────────────────────
+# Note: 'local' is only valid inside a function.
+# Step state is tracked via simple variables — no local needed here.
+run_step() {
+    local step_num="$1"
+    local step_desc="$2"
+    local script_name="$3"
+    local skip_if="${4:-}"   # optional: path that means "already done"
+
+    hdr "${step_num} — ${step_desc}"
+
+    if [ -n "$skip_if" ] && [ -e "$skip_if" ]; then
+        warn "Already complete — skipping."
+        warn "Remove '${skip_if}' to redo this step."
+        log "SKIP: $step_desc"
+        return 0
+    fi
+
+    if [ ! -f "$SCRIPT_DIR/$script_name" ]; then
+        die "Script not found: $script_name"
+    fi
+
+    log "START: $step_desc"
+    bash "$SCRIPT_DIR/$script_name" 2>&1 | tee -a "$LOG_FILE"
+    local exit_code=${PIPESTATUS[0]}
+    
+    if [ $exit_code -ne 0 ]; then
+        die "Script failed with exit code $exit_code: $script_name"
+    fi
+    
+    log "DONE:  $step_desc"
+    ok "${step_desc} complete."
+}
+
+# ── Step 1: Timezone ─────────────────────────────────────────────
+run_step "1/9" "Timezone (Asia/Manila)" \
+    "orp-timezone-setup.sh"
+
+# ── Step 2: Environment bootstrap ────────────────────────────────
+run_step "2/9" "Environment Configuration (.env)" \
+    "orp-env-bootstrap.sh" \
+    "$ENV_FILE"
+
+# ── Step 3: Python virtualenv ────────────────────────────────────
+run_step "3/9" "Python Virtualenv + Dependencies" \
+    "python_prep.sh" \
+    "$SCRIPT_DIR/.venv"
+
+# ── Step 4: Build immudb ─────────────────────────────────────────
+run_step "4/9" "immudb Binary Build" \
+    "immudb_setup.sh" \
+    "$HOME/bin/immudb"
+
+# ── Step 5: immudb operator database ─────────────────────────────
+run_step "5/9" "immudb Operator Database + Secrets" \
+    "immudb-setup-operator.sh" \
+    "$HOME/.identity/db_secrets.env"
+
+# ── Step 6: Sovereign PKI ────────────────────────────────────────
+PKI_DIR_DEFAULT="$HOME/.orp_engine/ssl"
+# Load .env to pick up PKI_DIR if set
+if [ -f "$ENV_FILE" ]; then
+    # shellcheck disable=SC1090
+    set -a; source "$ENV_FILE"; set +a
 fi
+run_step "6/9" "Sovereign PKI (mTLS Certificates)" \
+    "orp-pki-setup.sh" \
+    "${PKI_DIR:-$PKI_DIR_DEFAULT}/sovereign_root.crt"
 
-log "MASTER BOOTSTRAP START (CI_MODE=$CI_MODE) — repo: $REPO_DIR"
+# ── Step 7: Nginx ────────────────────────────────────────────────
+run_step "7/9" "Nginx mTLS Gateway" \
+    "nginx-setup.sh"
 
-# If CI mode, ensure required env vars are present and write .env non-interactively
-if [ "$CI_MODE" = true ]; then
-  log "CI mode: writing .env from environment variables"
-  : "${LGU_NAME:?LGU_NAME must be set in CI mode}"
-  : "${LGU_SIGNER_NAME:?LGU_SIGNER_NAME must be set in CI mode}"
-  : "${OPERATOR_GPG_EMAIL:?OPERATOR_GPG_EMAIL must be set in CI mode}"
-  : "${GITHUB_PORTAL_URL:?GITHUB_PORTAL_URL must be set in CI mode}"
+# ── Step 8: Repository structure ─────────────────────────────────
+# FIXED: Now actually calls repo-init.sh
+run_step "8/9" "Repository Directory Structure" \
+    "repo-init.sh" \
+    "$SCRIPT_DIR/docs/records/manifest.json"
 
-  cat > "$ENV_FILE" <<EOF
-# --- LGU Identity ---
-LGU_NAME="${LGU_NAME}"
-LGU_SIGNER_NAME="${LGU_SIGNER_NAME}"
-LGU_TIMEZONE="${LGU_TIMEZONE:-Asia/Manila}"
+# ── Final summary ─────────────────────────────────────────────────
+hdr "Setup Complete ✔"
+printf "\n"
+ok "ORP Engine environment is ready."
+printf "\n"
 
-# --- Operator ---
-OPERATOR_GPG_EMAIL="${OPERATOR_GPG_EMAIL}"
+PKI_FINAL="${PKI_DIR:-$PKI_DIR_DEFAULT}"
 
-# --- System Paths ---
-GITHUB_REPO_PATH="${GITHUB_REPO_PATH:-$REPO_DIR}"
-GITHUB_PORTAL_URL="${GITHUB_PORTAL_URL}"
+cat <<SUMMARY
+  ${BOLD}Next steps:${NC}
 
-# --- Flask ---
-FLASK_PORT=${FLASK_PORT:-5000}
+  ${GOLD}1.${NC} Install the operator certificate in your browser:
 
-# --- immudb ---
-IMMUDB_HOST="${IMMUDB_HOST:-127.0.0.1:3322}"
-IMMUDB_USER="${IMMUDB_USER:-orp_operator}"
-IMMUDB_DB="${IMMUDB_DB:-brgy_bunaodb}"
+       Chrome / Edge:
+         Settings → Privacy → Manage certificates → Import
+         Select: ${BOLD}${PKI_FINAL}/operator_01.p12${NC}
 
-# NOTE: GNUPGHOME is intentionally absent and created at runtime.
-EOF
-  chmod 600 "$ENV_FILE"
-  log ".env written (mode 600) from CI environment"
-else
-  # Interactive: run orp-env-bootstrap.sh only if .env missing
-  if [ ! -f "$ENV_FILE" ]; then
-    log ".env not found — launching interactive bootstrap: orp-env-bootstrap.sh"
-    bash "$REPO_DIR/orp-env-bootstrap.sh" 2>&1 | tee -a "$LOG_FILE"
-    log "Interactive .env bootstrap finished"
-  else
-    log ".env already present — skipping interactive bootstrap"
-  fi
-fi
+       Firefox:
+         Settings → Privacy → View Certificates → Import
+         Select: ${BOLD}${PKI_FINAL}/operator_01.p12${NC}
 
-# Run timezone setup
-log "Running timezone setup: orp-timezone-setup.sh"
-bash "$REPO_DIR/orp-timezone-setup.sh" 2>&1 | tee -a "$LOG_FILE"
+  ${GOLD}2.${NC} Launch the engine:
 
-# Build/install immudb
-log "Running immudb build/install: immudb_setup.sh"
-bash "$REPO_DIR/immudb_setup.sh" 2>&1 | tee -a "$LOG_FILE"
+         ${BOLD}./run_orp.sh${NC}
 
-# Create immudb DB and operator user
-log "Running immudb operator setup: immudb-setup-operator.sh"
-bash "$REPO_DIR/immudb-setup-operator.sh" 2>&1 | tee -a "$LOG_FILE"
+  ${GOLD}3.${NC} When prompted, paste the session SSH key to GitHub:
 
-# PKI setup
-log "Running PKI setup: orp-pki-setup.sh"
-bash "$REPO_DIR/orp-pki-setup.sh" 2>&1 | tee -a "$LOG_FILE"
+         GitHub → Settings → SSH Keys → New SSH Key
 
-# Python venv and dependencies
-log "Preparing Python environment: python_prep.sh"
-bash "$REPO_DIR/python_prep.sh" 2>&1 | tee -a "$LOG_FILE"
+  ${GOLD}4.${NC} Open the portal in your browser:
 
-# Final checks and summary
-log "MASTER BOOTSTRAP COMPLETE"
-cat <<EOF | tee -a "$LOG_FILE"
-Summary:
- - Repo: $REPO_DIR
- - .env: $( [ -f "$ENV_FILE" ] && echo "present (mode $(stat -c '%a' "$ENV_FILE"))" || echo "missing" )
- - immudb data: $HOME/immudb-data
- - PKI dir: /home/orp/orp_engine/ssl (if created)
- - Python venv: $REPO_DIR/.venv
+         ${BOLD}https://localhost:9443${NC}
 
-Next steps:
- 1) Activate Python venv: source "$REPO_DIR/.venv/bin/activate"
- 2) Start the engine: ./run_orp.sh
- 3) If you created an operator password interactively, consider persisting it to ~/.identity/db_secrets.env (mode 600) if you want automatic vault login.
+  ${DIM}Setup log: $LOG_FILE${NC}
 
-Logs: $LOG_FILE
-EOF
+SUMMARY
 
-exit 0
+log "Bootstrap complete at $(date)"

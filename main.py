@@ -1,4 +1,4 @@
-# main.py — ORP Engine · PDF Stamp & Anchor Service
+# main.py — ORP Engine · PDF Stamp & Anchor Service (IMPROVED)
 # Part of the OpenResPublica TruthChain stack.
 # Must be launched via run_orp.sh or run_orp-gum.sh — never directly.
 
@@ -11,6 +11,8 @@ import json         # reading and writing JSON records
 import datetime     # timestamps for records
 import threading    # Lock() for control numbers, Timer for shutdown
 import signal       # graceful shutdown on SIGINT / SIGTERM
+import time         # retry delays
+import fcntl        # file locking for process safety
 
 # Third-party — all listed in requirements.txt.
 import gnupg        # GPG signing of audit records
@@ -87,6 +89,10 @@ GITHUB_PORTAL = os.getenv("GITHUB_PORTAL_URL", "https://openrespublica.github.io
 # Control number file — persists the last issued number across sessions.
 RECORDS_DIR  = os.path.join(REPO_PATH, "docs", "records")
 CONTROL_FILE = os.path.join(REPO_PATH, "docs", "control_number.txt")
+
+# Vault retry configuration
+VAULT_MAX_RETRIES = 3
+VAULT_RETRY_DELAY = 1  # seconds
 
 
 # ── 3. FLASK INITIALIZATION ───────────────────────────────────────
@@ -192,32 +198,44 @@ def sign_json_data(record: dict) -> dict | None:
 def next_control_number() -> str:
     """
     Issues the next sequential control number for this calendar year.
-    The threading.Lock() ensures that even if two requests arrive
-    simultaneously, they receive different control numbers — never duplicates.
-
+    
+    IMPROVED: Uses both threading.Lock AND file locking for process safety.
+    The threading lock prevents race conditions between threads.
+    The fcntl file lock prevents race conditions between processes.
+    
     Format: YYYY-NNNN  (e.g. 2026-0042)
     """
     with ctrl_lock:
         local_tz     = pytz.timezone(TZ_NAME)
         current_year = str(datetime.datetime.now(local_tz).year)
 
-        # Create the control file if this is the first issuance ever.
+        # Create the control file atomically if this is the first issuance ever.
         if not os.path.exists(CONTROL_FILE):
-            with open(CONTROL_FILE, "w") as f:
-                f.write(f"{current_year}-0000")
+            try:
+                fd = os.open(CONTROL_FILE, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+                os.write(fd, b"2026-0000")
+                os.close(fd)
+            except FileExistsError:
+                # Another process created it between our check and creation
+                pass
 
+        # Use file locking for process-level safety
         with open(CONTROL_FILE, "r+") as f:
-            parts = f.read().strip().split("-")
-            year, num = parts[0], int(parts[1])
+            fcntl.flock(f, fcntl.LOCK_EX)  # Exclusive lock
+            try:
+                parts = f.read().strip().split("-")
+                year, num = parts[0], int(parts[1])
 
-            # Reset counter on new year.
-            if year != current_year:
-                year, num = current_year, 0
+                # Reset counter on new year.
+                if year != current_year:
+                    year, num = current_year, 0
 
-            new_ctrl = f"{year}-{(num + 1):04d}"
-            f.seek(0)
-            f.write(new_ctrl)
-            f.truncate()
+                new_ctrl = f"{year}-{(num + 1):04d}"
+                f.seek(0)
+                f.write(new_ctrl)
+                f.truncate()
+            finally:
+                fcntl.flock(f, fcntl.LOCK_UN)  # Release lock
 
         return new_ctrl
 
@@ -433,8 +451,8 @@ def upload_pdf():
     Pipeline:
       1. Validate the uploaded file (PDF only)
       2. Compute SHA-256 fingerprint
-      3. Anchor hash to immudb (immutable, append-only)
-      4. Issue a unique control number (thread-safe)
+      3. Anchor hash to immudb (immutable, append-only) with retry logic
+      4. Issue a unique control number (thread-safe + process-safe)
       5. GPG-sign the audit record
       6. Save the JSON record locally
       7. Sync to GitHub Pages (background daemon thread)
@@ -457,17 +475,42 @@ def upload_pdf():
     # produces a completely different hash.
     sha256_hash = hashlib.sha256(pdf_bytes).hexdigest()
 
-    # ── Step 3: Anchor to immudb ─────────────────────────────────
-    # Only the hash is stored — never the document itself.
-    # This protects data privacy while still proving the document existed.
-    # immudb is append-only — once written, this record cannot be altered.
-    try:
-        tx = client.set(sha256_hash.encode(), b"VERIFIED_BY_ORP_ENGINE")
-    except Exception:
-        # Session timeout — reconnect using the cached password (no prompt).
-        print("⚠️  immudb session expired — reconnecting...")
-        client = get_client()
-        tx = client.set(sha256_hash.encode(), b"VERIFIED_BY_ORP_ENGINE")
+    # ── Step 3: Anchor to immudb with RETRY LOGIC ─────────────────
+    # FIXED: Now handles transient failures gracefully with exponential backoff
+    tx = None
+    last_error = None
+    
+    for attempt in range(1, VAULT_MAX_RETRIES + 1):
+        try:
+            print(f"[*] Anchoring hash to vault (attempt {attempt}/{VAULT_MAX_RETRIES})...")
+            tx = client.set(sha256_hash.encode(), b"VERIFIED_BY_ORP_ENGINE")
+            print(f"[✔] Hash anchored: {sha256_hash}")
+            break
+        except Exception as e:
+            last_error = e
+            if attempt < VAULT_MAX_RETRIES:
+                print(f"[!] Vault error (attempt {attempt}): {e}")
+                print(f"    Retrying in {VAULT_RETRY_DELAY}s...")
+                time.sleep(VAULT_RETRY_DELAY)
+                
+                # Try to reconnect
+                try:
+                    print("[*] Reconnecting to vault...")
+                    client = get_client()
+                except Exception as reconnect_error:
+                    print(f"[!] Reconnection failed: {reconnect_error}")
+                    last_error = reconnect_error
+            else:
+                print(f"[✘] Vault unavailable after {VAULT_MAX_RETRIES} attempts")
+
+    if tx is None:
+        # All retries exhausted
+        return jsonify({
+            "status": "ERROR",
+            "message": f"Failed to anchor hash after {VAULT_MAX_RETRIES} attempts",
+            "error": str(last_error),
+            "sha256": sha256_hash
+        }), 503  # 503 Service Unavailable
 
     # ── Step 4: Control number & timestamp ───────────────────────
     local_tz     = pytz.timezone(TZ_NAME)

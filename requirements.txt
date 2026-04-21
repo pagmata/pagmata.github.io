@@ -1,23 +1,9 @@
-# requirements.txt — ORP Engine dependencies
-# Install via: pip install -r requirements.txt
-# Or run: ./python_prep.sh
-
-# ── Web framework ────────────────────────────────────────────────
-flask>=3.0.0
-
-# ── PDF processing ───────────────────────────────────────────────
-pypdf>=4.0.0
-reportlab>=4.0.0
-
-# ── QR code generation ───────────────────────────────────────────
-qrcode[pil]>=7.4.0
-
-# ── Cryptography ─────────────────────────────────────────────────
-python-gnupg>=0.5.0
-
-# ── Immutable database client ────────────────────────────────────
-immudb-py>=1.4.0
-
-# ── Environment & timezone ───────────────────────────────────────
-python-dotenv>=1.0.0
-pytz>=2024.1
+Flask==3.0.0
+Gunicorn==21.2.0
+pypdf==4.2.1
+reportlab==4.0.7
+qrcode[pil]==7.4.2
+python-gnupg==0.5.2
+pytz==2024.1
+immudb-py==0.6.0
+python-dotenv==1.0.0
