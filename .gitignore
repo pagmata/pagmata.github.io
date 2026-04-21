@@ -1,41 +1,62 @@
-# Environment and secrets
-.env
-.env.*.local
-.venv/
-venv/
-__pycache__/
-*.pyc
-*.pyo
-*.pyd
-
-# Logs and runtime
-*.log
-universal-setup.log
-*.pid
-
-# Keys and sensitive artifacts
-*.key
-*.pem
-*.srl
-*.p12
-*.crt
-
-# immudb data
-immudb-data/
-.orp_vault/
-.orp_vault/**
-
-# Editor / OS
+# OS, editors
 .DS_Store
 Thumbs.db
 .vscode/
 .idea/
 *.swp
 
-# Build / packaging
+# Python / venv
+.venv/
+venv/
+__pycache__/
+*.pyc
+*.pyo
+
+# Environment and secrets
+.env
+.env.*.local
+.identity/
+.identity/**
+
+# Shell and user dotfiles (do not commit)
+.bash_history
+.bash_logout
+.bash_profile
+.bashrc
+.cshrc
+.tcshrc
+
+# SSH and GPG
+.ssh/
+.gnupg/
+
+# Build caches and temporary files
+.cache/
+.cache/**          # include go-build and other caches
+.cache/go-build/
+.cache/go-build/**
+
+# immudb and runtime data
+immudb-data/
+.orp_vault/
+.orp_vault/**
+
+# Logs and runtime
+*.log
+universal-setup.log
+*.pid
+
+# Keys and certificates
+*.key
+*.pem
+*.srl
+*.p12
+*.crt
+
+# Packaging / build artifacts
 dist/
 build/
 *.egg-info/
 
-# GitHub Pages build output (if you use it locally)
+# GitHub Pages build output (if used locally)
 public/
