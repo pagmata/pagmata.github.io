@@ -179,6 +179,40 @@ run_step "8/9" "Repository Directory Structure" \
     "repo-init.sh" \
     "$SCRIPT_DIR/docs/records/manifest.json"
 
+# ── OPTIONAL Step: GitHub Pages Setup ────────────────────────────
+if [ "$SETUP_GITHUB_PAGES" = "y" ] && [ -f "$SCRIPT_DIR/github-pages-setup.sh" ]; then
+    bash "$SCRIPT_DIR/github-pages-setup.sh"
+    
+    # Copy frontend files
+    info "Deploying frontend to portal repository..."
+    PORTAL_REPO=$(grep "^GITHUB_REPO_PATH=" "$ENV_FILE" | cut -d= -f2 | tr -d '"')
+    if [ -d "$PORTAL_REPO" ]; then
+        mkdir -p "$PORTAL_REPO/docs"
+        cp "$SCRIPT_DIR/docs"/*.{html,js,css} "$PORTAL_REPO/docs/" 2>/dev/null || true
+        
+        # Generate config.json
+        CONFIG_FILE="$PORTAL_REPO/docs/config.json"
+        cat > "$CONFIG_FILE" <<EOJSON
+{
+  "lgu": {
+    "name": "$LGU_NAME",
+    "signer_name": "$LGU_SIGNER_NAME",
+    "signer_position": "$LGU_SIGNER_POSITION",
+    "timezone": "$LGU_TIMEZONE"
+  },
+  "portal": {
+    "title": "TruthChain Verification",
+    "subtitle": "LGU $LGU_NAME · Cryptographic Document Audit Portal"
+  },
+  "generated": "$(date -Iseconds)",
+  "version": "1.0.0"
+}
+EOJSON
+        
+        ok "Frontend deployed and configured."
+    fi
+fi
+
 # ── Final summary ─────────────────────────────────────────────────
 # ── Final summary ─────────────────────────────────────────────────
 hdr "Setup Complete ✔"
