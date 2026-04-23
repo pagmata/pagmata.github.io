@@ -23,8 +23,8 @@ wsl -d Ubuntu
 
 # 2. Clone repository
 cd ~
-git clone https://github.com/openrespublica/openrespublica.github.io.git
-cd openrespublica.github.io
+git clone https://github.com/openrespublica/openrespublica-core.git
+cd openrespublica-core
 
 # 3. Run master setup (interactive — takes ~20 minutes on first run)
 chmod +x master-bootstrap.sh
