@@ -223,26 +223,26 @@ printf "\n"
 PKI_FINAL="${PKI_DIR:-$PKI_DIR_DEFAULT}"
 
 {
-    printf -e "  ${GOLD}Next steps:${NC}\n\n"
+    printf "  ${GOLD}Next steps:${NC}\n\n"
     
-    printf -e "  ${GOLD}1.${NC} Install the operator certificate in your browser:\n\n"
-    printf -e "       Chrome / Edge:\n"
-    printf -e "         Settings → Privacy → Manage certificates → Import\n"
-    printf -e "         Select: ${BOLD}${PKI_FINAL}/operator_01.p12${NC}\n\n"
-    printf -e "       Firefox:\n"
-    printf -e "         Settings → Privacy → View Certificates → Import\n"
-    printf -e "         Select: ${BOLD}${PKI_FINAL}/operator_01.p12${NC}\n\n"
+    printf "  ${GOLD}1.${NC} Install the operator certificate in your browser:\n\n"
+    printf "       Chrome / Edge:\n"
+    printf "         Settings → Privacy → Manage certificates → Import\n"
+    printf "         Select: ${BOLD}${PKI_FINAL}/operator_01.p12${NC}\n\n"
+    printf "       Firefox:\n"
+    printf "         Settings → Privacy → View Certificates → Import\n"
+    printf "         Select: ${BOLD}${PKI_FINAL}/operator_01.p12${NC}\n\n"
     
-    printf -e "  ${GOLD}2.${NC} Launch the engine:\n\n"
-    printf -e "         ${BOLD}./run_orp.sh${NC}\n\n"
+    printf "  ${GOLD}2.${NC} Launch the engine:\n\n"
+    printf "         ${BOLD}./run_orp.sh${NC}\n\n"
     
-    printf -e "  ${GOLD}3.${NC} When prompted, paste the session SSH key to GitHub:\n\n"
-    printf -e "         GitHub → Settings → SSH Keys → New SSH Key\n\n"
+    printf "  ${GOLD}3.${NC} When prompted, paste the session SSH key to GitHub:\n\n"
+    printf "         GitHub → Settings → SSH Keys → New SSH Key\n\n"
     
-    printf -e "  ${GOLD}4.${NC} Open the portal in your browser:\n\n"
-    printf -e "         ${BOLD}https://localhost:9443${NC}\n\n"
+    printf "  ${GOLD}4.${NC} Open the portal in your browser:\n\n"
+    printf "         ${BOLD}https://localhost:9443${NC}\n\n"
     
-    printf -e "  ${DIM}Setup log: $LOG_FILE${NC}\n\n"
+    printf "  ${DIM}Setup log: $LOG_FILE${NC}\n\n"
 } | tee -a "$LOG_FILE"
 
 log "Bootstrap complete at $(date)"
