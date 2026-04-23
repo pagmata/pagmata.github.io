@@ -223,7 +223,7 @@ printf "\n"
 PKI_FINAL="${PKI_DIR:-$PKI_DIR_DEFAULT}"
 
 {
-    printf -e "  ${BOLD}Next steps:${NC}\n\n"
+    printf -e "  ${GOLD}Next steps:${NC}\n\n"
     
     printf -e "  ${GOLD}1.${NC} Install the operator certificate in your browser:\n\n"
     printf -e "       Chrome / Edge:\n"
