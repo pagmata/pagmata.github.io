@@ -277,6 +277,194 @@ if command -v nginx >/dev/null 2>&1 && pgrep -x nginx >/dev/null 2>&1; then
     fi
 fi
 
+# ── 8. Export Certificates to Windows ────────────────────────────
+section "8. Export Certificates to Windows"
+
+if [ ! -d "/mnt/c" ]; then
+    warn "Windows filesystem (/mnt/c) not available. Skipping export."
+else
+    WIN_DOWNLOADS="$(wslpath "$(cmd.exe /c 'echo %USERPROFILE%\\Downloads' 2>/dev/null | tr -d '\r')")"
+    EXPORT_DIR="${WIN_DOWNLOADS}/orp_certs"
+
+    info "Exporting certificates to Windows:"
+    printf "  ${DIM}%s${NC}\n\n" "$EXPORT_DIR"
+
+    mkdir -p "$EXPORT_DIR"
+
+    copy_if_changed() {
+        local src="$1"
+        local dst="$2"
+
+        if [ -f "$dst" ] && cmp -s "$src" "$dst"; then
+            info "Unchanged: $(basename "$src")"
+        else
+            cp "$src" "$dst"
+            ok "Updated: $(basename "$src")"
+        fi
+    }
+
+    # Export minimal required files
+    copy_if_changed "$PKI_DIR/sovereign_root.crt" "$EXPORT_DIR/sovereign_root.crt"
+    copy_if_changed "$PKI_DIR/operator_01.p12"    "$EXPORT_DIR/operator_01.p12"
+
+    # Optional: include private key
+    if [ "${EXPORT_PRIVATE_KEY:-false}" = "true" ]; then
+        warn "Exporting PRIVATE KEY — ensure this is intentional!"
+        copy_if_changed "$PKI_DIR/operator_01.key" "$EXPORT_DIR/operator_01.key"
+    fi
+
+    # Verify integrity
+    cmp -s "$PKI_DIR/operator_01.p12" "$EXPORT_DIR/operator_01.p12" \
+        && ok "Integrity check passed (operator_01.p12)" \
+        || warn "Integrity check failed!"
+
+    # Open in Explorer
+    if command -v explorer.exe >/dev/null 2>&1; then
+        explorer.exe "$(wslpath -w "$EXPORT_DIR")" >/dev/null 2>&1 || true
+    fi
+
+    ok "Windows export complete."
+fi
+
+# ── 9. Auto-Import Root CA into Windows ──────────────────────────
+section "9. Trust Root CA in Windows"
+
+if [ ! -f "$PKI_DIR/sovereign_root.crt" ]; then
+    warn "Root CA not found. Skipping Windows trust import."
+else
+    if ! command -v powershell.exe >/dev/null 2>&1; then
+        warn "PowerShell not available. Skipping import."
+    else
+        read -r -p "  Trust Root CA in Windows? [y/N]: " TRUST_CA
+        TRUST_CA="${TRUST_CA:-N}"
+
+        if [[ "$TRUST_CA" =~ ^[Yy]$ ]]; then
+            info "Importing Root CA into Windows Trusted Root store..."
+
+            WIN_CERT_PATH="$(wslpath -w "$PKI_DIR/sovereign_root.crt")"
+
+            powershell.exe -NoProfile -Command "
+                \$certPath = '$WIN_CERT_PATH';
+                \$cert = Get-PfxCertificate -FilePath \$certPath;
+                \$store = New-Object System.Security.Cryptography.X509Certificates.X509Store('Root','CurrentUser');
+                \$store.Open('ReadWrite');
+                \$store.Add(\$cert);
+                \$store.Close();
+            " >/dev/null 2>&1
+            powershell.exe -NoProfile -Command "
+                \$certPath = '$WIN_CERT_PATH';
+                \$newCert = Get-PfxCertificate -FilePath \$certPath;
+                \$store = New-Object System.Security.Cryptography.X509Certificates.X509Store('Root','CurrentUser');
+                \$store.Open('ReadWrite');
+                \$exists = \$store.Certificates | Where-Object {
+                    \$_.Thumbprint -eq \$newCert.Thumbprint
+                };
+
+                if (-not \$exists) {
+                    \$store.Add(\$newCert);
+                }
+
+                \$store.Close();
+            " >/dev/null 2>&1
+            
+            ok "Root CA imported into Windows (CurrentUser → Trusted Root)."
+        else
+            warn "Skipped Windows trust import."
+            hint "You can manually import sovereign_root.crt if needed."
+        fi
+    fi
+fi
+
+# ── 10. Auto-Import Operator Certificate (Windows) ───────────────
+section "10. Install Operator Certificate in Windows"
+
+if [ ! -f "$PKI_DIR/operator_01.p12" ]; then
+    warn "operator_01.p12 not found. Skipping import."
+else
+    if ! command -v powershell.exe >/dev/null 2>&1; then
+        warn "PowerShell not available. Skipping import."
+    else
+        read -r -p "  Install operator certificate into Windows? [y/N]: " INSTALL_P12
+        INSTALL_P12="${INSTALL_P12:-N}"
+
+        if [[ "$INSTALL_P12" =~ ^[Yy]$ ]]; then
+            info "Importing operator certificate..."
+
+            WIN_P12_PATH="$(wslpath -w "$PKI_DIR/operator_01.p12")"
+
+            # Prompt for password again (needed for import)
+            read -s -r -p "  Enter export password (leave blank if none): " P12PASS
+            printf "\n"
+
+            powershell.exe -NoProfile -Command "
+                \$pfxPath = '$WIN_P12_PATH';
+                \$password = ConvertTo-SecureString '$P12PASS' -AsPlainText -Force;
+
+                Import-PfxCertificate -FilePath \$pfxPath `
+                    -CertStoreLocation Cert:\CurrentUser\My `
+                    -Password \$password | Out-Null
+            " >/dev/null 2>&1
+
+            ok "Operator certificate installed (CurrentUser → Personal)."
+        else
+            warn "Skipped operator certificate import."
+        fi
+    fi
+fi
+
+# ── 11. Configure Browser Auto-Selection ─────────────────────────
+section "11. Configure Browser mTLS Auto-Selection"
+
+if command -v powershell.exe >/dev/null 2>&1; then
+    read -r -p "  Enable auto-select certificate for localhost? [y/N]: " AUTOSELECT
+    AUTOSELECT="${AUTOSELECT:-N}"
+
+    if [[ "$AUTOSELECT" =~ ^[Yy]$ ]]; then
+        info "Configuring Chrome/Edge policy..."
+
+        powershell.exe -NoProfile -Command "
+            \$policyPath = 'HKCU:\Software\Policies\Microsoft\Edge';
+            New-Item -Path \$policyPath -Force | Out-Null;
+
+            \$rule = '[{\"pattern\":\"https://localhost:9443\",\"filter\":{\"ISSUER\":{\"CN\":\"ORP Root CA\"}}}]';
+
+            Set-ItemProperty -Path \$policyPath `
+                -Name 'AutoSelectCertificateForUrls' `
+                -Value \$rule -Type String;
+
+            # Chrome (same policy path but different key)
+            \$chromePath = 'HKCU:\Software\Policies\Google\Chrome';
+            New-Item -Path \$chromePath -Force | Out-Null;
+
+            Set-ItemProperty -Path \$chromePath `
+                -Name 'AutoSelectCertificateForUrls' `
+                -Value \$rule -Type String;
+        " >/dev/null 2>&1
+
+        ok "Browser auto-selection configured."
+    else
+        warn "Skipped browser auto-selection."
+    fi
+fi
+
+# ── 12. Launch ORP Portal ────────────────────────────────────────
+section "12. Launch ORP Portal"
+
+if command -v powershell.exe >/dev/null 2>&1; then
+    read -r -p "  Open ORP portal now? [Y/n]: " OPEN_BROWSER
+    OPEN_BROWSER="${OPEN_BROWSER:-Y}"
+
+    if [[ "$OPEN_BROWSER" =~ ^[Yy]$ ]]; then
+        info "Opening https://localhost:9443 ..."
+
+        powershell.exe -NoProfile -Command "
+            Start-Process 'https://localhost:9443'
+        " >/dev/null 2>&1
+
+        ok "Browser launched."
+    fi
+fi
+
 # ── Summary ───────────────────────────────────────────────────────
 printf "\n${BOLD}${CYAN}━━━ PKI Setup Complete ━━━${NC}\n\n"
 printf "  ${BOLD}%-30s${NC} %s\n" "Root CA (public):"    "$PKI_DIR/sovereign_root.crt"
