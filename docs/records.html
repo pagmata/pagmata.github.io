@@ -429,7 +429,7 @@
                 <div class="seal-ornament"></div>
             </div>
             <h1>Public Audit Ledger</h1>
-            <p class="subtitle">Transparency Portal &nbsp;·&nbsp; Barangay Buñao, Dumaguete City</p>
+            <p class="subtitle">Transparency Portal &nbsp;·&nbsp; {{LGU_NAME}}</p>
         </div>
     </header>
 
@@ -509,101 +509,17 @@
 
     <footer class="site-footer">
         Secured by <strong>immudb</strong> &amp; Ed25519 cryptography &nbsp;·&nbsp;
-        <strong>OpenResPublica TruthChain</strong> &nbsp;·&nbsp; Barangay Buñao, Dumaguete City
+        <strong>OpenResPublica TruthChain</strong> &nbsp;·&nbsp; {{LGU_NAME}}
     </footer>
 
-    <script>
-        let ledgerData = [];
-        let filteredData = [];
-        let currentPage = 1;
-        const PAGE_SIZE = 15;
-
-        document.addEventListener('DOMContentLoaded', loadLedger);
-
-        async function loadLedger() {
-            try {
-                const response = await fetch(`records/manifest.json?t=${Date.now()}`);
-                if (!response.ok) throw new Error();
-
-                ledgerData = await response.json();
-                ledgerData.reverse(); // newest first
-
-                // Stats
-                document.getElementById('statTotal').textContent = ledgerData.length;
-                if (ledgerData.length > 0) {
-                    const latest = ledgerData[0].timestamp
-                        ? ledgerData[0].timestamp.split(' ')[0]
-                        : '—';
-                    document.getElementById('statLatest').textContent = latest;
-                }
-
-                filteredData = ledgerData;
-                renderPage();
-
-            } catch (e) {
-                document.getElementById('ledger-body').innerHTML =
-                    '<tr><td colspan="5"><div class="table-msg">No records found in the cloud ledger yet.</div></td></tr>';
-                document.getElementById('recordCount').textContent = '0 records';
-            }
-        }
-
-        function renderPage() {
-            const tbody = document.getElementById('ledger-body');
-            const total = filteredData.length;
-            const start = (currentPage - 1) * PAGE_SIZE;
-            const end = Math.min(start + PAGE_SIZE, total);
-            const slice = filteredData.slice(start, end);
-
-            if (slice.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="5"><div class="table-msg">No matching records found.</div></td></tr>';
-                document.getElementById('recordCount').textContent = '0 records';
-                document.getElementById('prevBtn').disabled = true;
-                document.getElementById('nextBtn').disabled = true;
-                return;
-            }
-
-            tbody.innerHTML = slice.map(item => `
-                <tr>
-                    <td><span class="ctrl-num">${item.control_number || '—'}</span></td>
-                    <td><span class="date-cell">${formatDate(item.timestamp)}</span></td>
-                    <td><span class="badge-type">${item.document_type || 'GENERAL'}</span></td>
-                    <td><span class="hash-cell">${(item.sha256_hash || '').substring(0, 16)}...</span></td>
-                    <td class="action-cell">
-                        <a href="index.html?hash=${item.sha256_hash}" class="verify-link">Verify</a>
-                    </td>
-                </tr>
-            `).join('');
-
-            document.getElementById('recordCount').textContent =
-                `Showing ${start + 1}–${end} of ${total} record${total !== 1 ? 's' : ''}`;
-            document.getElementById('prevBtn').disabled = currentPage === 1;
-            document.getElementById('nextBtn').disabled = end >= total;
-        }
-
-        function changePage(dir) {
-            const maxPage = Math.ceil(filteredData.length / PAGE_SIZE);
-            currentPage = Math.max(1, Math.min(currentPage + dir, maxPage));
-            renderPage();
-            window.scrollTo({ top: 0, behavior: 'smooth' });
-        }
-
-        function searchLedger() {
-            const term = document.getElementById('search').value.toLowerCase().trim();
-            filteredData = term
-                ? ledgerData.filter(item =>
-                    (item.control_number || '').toLowerCase().includes(term) ||
-                    (item.document_type || '').toLowerCase().includes(term)
-                  )
-                : ledgerData;
-            currentPage = 1;
-            renderPage();
-        }
-
-        function formatDate(ts) {
-            if (!ts) return '—';
-            return ts.split(' ')[0];
-        }
-    </script>
+    <!-- ledger.js handles manifest fetch, stats, pagination, and search.
+         Bugs fixed in ledger.js vs this old inline script:
+           • .reverse() removed — manifest is already newest-first from main.py
+           • ledgerData[0] now correctly returns the NEWEST record (not oldest)
+           • statYear auto-populated from new Date().getFullYear()
+           • null safety on all item fields — no more TypeErrors on bad records
+           • Optional chaining on search input reference -->
+    <script src="ledger.js"></script>
 
 </body>
 </html>
