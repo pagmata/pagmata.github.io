@@ -413,7 +413,7 @@
                 <div class="seal-ornament"></div>
             </div>
             <h1>About TruthChain</h1>
-            <p class="subtitle">Transparency through Technology &nbsp;·&nbsp; {{LGU_NAME}}</p>
+            <p class="subtitle" data-orp-lgu-name>Loading…</p>
         </div>
     </header>
 
@@ -422,7 +422,7 @@
 
             <div class="intro-section">
                 <h2>Governance You Can Verify</h2>
-                <p>OpenResPublica TruthChain is a pilot initiative by {{LGU_NAME}} to modernize local governance using cryptographic principles. Every official document issued carries a permanent, tamper-proof fingerprint anchored to an immutable ledger — visible to all, alterable by none.</p>
+                <p>OpenResPublica TruthChain is a pilot initiative by <span data-orp-lgu-name>Loading…</span> to modernize local governance using cryptographic principles. Every official document issued carries a permanent, tamper-proof fingerprint anchored to an immutable ledger — visible to all, alterable by none.</p>
             </div>
 
             <div class="pillars">
@@ -483,8 +483,8 @@
         <div class="official-band">
             <div class="official-inner">
                 <p class="official-label">Authorized &amp; Championed By</p>
-                <h3 class="official-name">{{SIGNER_NAME}}</h3>
-                <p class="official-position">{{SIGNER_POSITION}} &nbsp;·&nbsp; {{LGU_NAME}}</p>
+                <h3 class="official-name" data-orp-signer-name>Loading…</h3>
+                <p class="official-position" data-orp-signer-position>Loading…</p>
                 <div class="official-divider"></div>
                 <!-- <p class="official-quote">A public servant's word must be written not just in ink, but in mathematics — so that no power on earth can erase it.</p> -->
             </div>
@@ -541,8 +541,10 @@
 
     <footer class="site-footer">
         Secured by <strong>immudb</strong> &amp; Ed25519 cryptography &nbsp;·&nbsp;
-        <strong>OpenResPublica TruthChain</strong> &nbsp;·&nbsp; {{LGU_NAME}}
+        <strong>OpenResPublica TruthChain</strong> &nbsp;·&nbsp; <span data-orp-lgu-name>Loading…</span>
     </footer>
 
+    <!-- Load runtime config and then other scripts -->
+    <script src="assets/config-loader.js"></script>
 </body>
 </html>
