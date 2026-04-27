@@ -430,7 +430,7 @@
                 <div class="seal-ornament"></div>
             </div>
             <h1>TruthChain Verification</h1>
-            <p class="subtitle">{{LGU_NAME}} &nbsp;·&nbsp; Cryptographic Document Audit Portal</p>
+            <p class="subtitle" data-orp-lgu-name>Loading…</p>
         </div>
     </header>
 
@@ -485,14 +485,12 @@
 
     <footer class="site-footer">
         Secured by <strong>immudb</strong> &amp; Ed25519 cryptography &nbsp;·&nbsp;
-        <strong>OpenResPublica TruthChain</strong> &nbsp;·&nbsp; {{LGU_NAME}}
+        <strong>OpenResPublica TruthChain</strong> &nbsp;·&nbsp; <span data-orp-lgu-name>Loading…</span>
     </footer>
 
-    <!-- verify.js handles hash lookup, retry logic, and result rendering.
-         Bugs fixed in verify.js vs the old inline script:
-           • finally block removed — spinner no longer hides during 10s retry
-           • null safety added — all data fields have fallback '—' values
-           • Enter key handler included (was already here, preserved in verify.js) -->
+    <!-- Load runtime config first so verify.js can use ORP.get(...) if needed -->
+    <script src="assets/config-loader.js"></script>
+    <!-- verify.js handles hash lookup, retry logic, and result rendering -->
     <script src="verify.js"></script>
 
 </body>
