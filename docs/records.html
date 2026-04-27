@@ -429,7 +429,7 @@
                 <div class="seal-ornament"></div>
             </div>
             <h1>Public Audit Ledger</h1>
-            <p class="subtitle">Transparency Portal &nbsp;·&nbsp; {{LGU_NAME}}</p>
+            <p class="subtitle" data-orp-lgu-name>Loading…</p>
         </div>
     </header>
 
@@ -509,16 +509,12 @@
 
     <footer class="site-footer">
         Secured by <strong>immudb</strong> &amp; Ed25519 cryptography &nbsp;·&nbsp;
-        <strong>OpenResPublica TruthChain</strong> &nbsp;·&nbsp; {{LGU_NAME}}
+        <strong>OpenResPublica TruthChain</strong> &nbsp;·&nbsp; <span data-orp-lgu-name>Loading…</span>
     </footer>
 
-    <!-- ledger.js handles manifest fetch, stats, pagination, and search.
-         Bugs fixed in ledger.js vs this old inline script:
-           • .reverse() removed — manifest is already newest-first from main.py
-           • ledgerData[0] now correctly returns the NEWEST record (not oldest)
-           • statYear auto-populated from new Date().getFullYear()
-           • null safety on all item fields — no more TypeErrors on bad records
-           • Optional chaining on search input reference -->
+    <!-- Load runtime config before ledger logic -->
+    <script src="assets/config-loader.js"></script>
+    <!-- ledger.js handles manifest fetch, stats, pagination, and search. -->
     <script src="ledger.js"></script>
 
 </body>
