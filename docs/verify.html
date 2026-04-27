@@ -97,6 +97,9 @@
         </nav>
     </main>
 
+    <!-- Load config for branding if desired -->
+    <script src="assets/config-loader.js"></script>
+
     <script>
         const params = new URLSearchParams(window.location.search);
         const fileHash = params.get('hash');
@@ -137,8 +140,6 @@
             ` : '';
 
             // Extract the GPG signature status from the audit record.
-            // hardware_seal (ESP32) is a Phase 2 feature — not written by main.py yet.
-            // Showing "N/A..." for a field that never exists is misleading; removed.
             const gpgSig = data.data_signature?.gpg_signature ? "Valid OpenPGP Signature" : "N/A";
 
             container.innerHTML = `
