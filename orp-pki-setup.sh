@@ -67,35 +67,35 @@ echo 1000 > crlnumber
 check_cert_expiry() {
     local cert_path="$1"
     local cert_name="$2"
-    
+
     if [ ! -f "$cert_path" ]; then
         return 1
     fi
-    
+
     local expiry_date
     expiry_date=$(openssl x509 -noout -enddate -in "$cert_path" 2>/dev/null | cut -d= -f2 || echo "unknown")
-    
+
     if [ "$expiry_date" != "unknown" ]; then
         # Try to calculate days remaining
         if command -v date >/dev/null 2>&1; then
             local expiry_epoch
             local now_epoch
             local days_left
-            
+
             expiry_epoch=$(date -d "$expiry_date" +%s 2>/dev/null || echo "0")
             now_epoch=$(date +%s 2>/dev/null || echo "0")
             days_left=$(( ($expiry_epoch - $now_epoch) / 86400 ))
-            
+
             if [ "$days_left" -gt 0 ] && [ "$days_left" -lt 30 ]; then
                 warn "⚠️  ${cert_name} expires in ${days_left} days: ${expiry_date}"
                 warn "    To renew, delete ${cert_path} and re-run this script."
                 return 0
             fi
         fi
-        
+
         printf "  ${DIM}Expiry: %s${NC}\n" "$expiry_date"
     fi
-    
+
     return 0
 }
 
@@ -366,7 +366,7 @@ else
 
                 \$store.Close();
             " >/dev/null 2>&1
-            
+
             ok "Root CA imported into Windows (CurrentUser → Trusted Root)."
         else
             warn "Skipped Windows trust import."
