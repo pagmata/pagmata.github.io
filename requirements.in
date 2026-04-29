@@ -1,10 +1,10 @@
 # ── SECURITY HARDENING ───────────────────────────────────────────
-python-magic==0.4.27        # MIME type validation
-Flask-WTF==1.3.0            # CSRF protection
-Flask-Limiter==4.1.1        # Rate limiting
+python-magic==0.4.27
+Flask-WTF==1.3.0
+Flask-Limiter==4.1.1
 
 # ── OBSERVABILITY ────────────────────────────────────────────────
-python-json-logger==4.1.0   # Structured JSON logging
+python-json-logger==4.1.0
 
 # ── TESTING (dev-only) ───────────────────────────────────────────
 pytest==9.0.3
@@ -12,7 +12,7 @@ pytest-cov==7.1.0
 pytest-mock==3.15.1
 
 # ── SECURITY SCANNING (dev-only) ─────────────────────────────────
-pip-audit==2.10.0           # CVE checking
+pip-audit==2.10.0
 
 # ── WSGI server ──────────────────────────────────────────────────
 gunicorn==25.3.0
@@ -26,7 +26,7 @@ reportlab==4.4.10
 
 # ── QR code generation ───────────────────────────────────────────
 qrcode==8.2
-Pillow==10.3.0              # required for qrcode[pil] extra
+Pillow==10.3.0
 
 # ── Cryptography ─────────────────────────────────────────────────
 python-gnupg==0.5.6
