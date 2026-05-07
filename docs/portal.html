@@ -1,0 +1,550 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>About | OpenResPublica TruthChain</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700&family=IBM+Plex+Mono:wght@400;600&family=Source+Sans+3:wght@400;500;600&display=swap" rel="stylesheet">
+    <style>
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+        :root {
+            --navy: #002147;
+            --navy-deep: #001530;
+            --navy-mid: #003366;
+            --gold: #C9A84C;
+            --gold-pale: #FDF3D0;
+            --white: #FAFAF7;
+            --ink: #1A1A2E;
+            --muted: #6B7280;
+            --border: rgba(0,33,71,0.1);
+            --font-serif: 'Playfair Display', Georgia, serif;
+            --font-sans: 'Source Sans 3', system-ui, sans-serif;
+            --font-mono: 'IBM Plex Mono', 'Courier New', monospace;
+        }
+
+        body {
+            background: var(--white);
+            color: var(--ink);
+            font-family: var(--font-sans);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .site-header {
+            background: var(--navy-deep);
+            border-bottom: 3px solid var(--gold);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .site-header::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background:
+                repeating-linear-gradient(90deg, transparent, transparent 40px, rgba(201,168,76,0.04) 40px, rgba(201,168,76,0.04) 41px),
+                repeating-linear-gradient(0deg,  transparent, transparent 40px, rgba(201,168,76,0.04) 40px, rgba(201,168,76,0.04) 41px);
+            pointer-events: none;
+        }
+
+        .header-inner {
+            max-width: 860px;
+            margin: 0 auto;
+            padding: 2.5rem 1.5rem 2rem;
+            text-align: center;
+            position: relative;
+        }
+
+        .republic-label {
+            font-size: 0.7rem;
+            font-weight: 600;
+            letter-spacing: 0.25em;
+            text-transform: uppercase;
+            color: var(--gold);
+            margin-bottom: 0.5rem;
+        }
+
+        .seal-line {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 1rem;
+            margin-bottom: 1.25rem;
+        }
+
+        .seal-ornament {
+            flex: 1;
+            height: 1px;
+            background: linear-gradient(to right, transparent, var(--gold), transparent);
+            max-width: 120px;
+        }
+
+        .seal-diamond {
+            width: 10px;
+            height: 10px;
+            background: var(--gold);
+            transform: rotate(45deg);
+            flex-shrink: 0;
+        }
+
+        .site-header h1 {
+            font-family: var(--font-serif);
+            font-size: clamp(1.6rem, 4vw, 2.4rem);
+            font-weight: 700;
+            color: var(--white);
+            line-height: 1.2;
+            margin-bottom: 0.4rem;
+        }
+
+        .site-header .subtitle {
+            font-size: 0.85rem;
+            color: rgba(201,168,76,0.85);
+            letter-spacing: 0.05em;
+        }
+
+        main { flex: 1; }
+
+        .content-wrap {
+            max-width: 860px;
+            margin: 0 auto;
+            padding: 2.5rem 1.5rem;
+        }
+
+        .intro-section {
+            text-align: center;
+            margin-bottom: 3rem;
+        }
+
+        .intro-section h2 {
+            font-family: var(--font-serif);
+            font-size: 1.6rem;
+            color: var(--navy-mid);
+            margin-bottom: 0.75rem;
+        }
+
+        .intro-section p {
+            font-size: 1rem;
+            color: var(--muted);
+            line-height: 1.75;
+            max-width: 600px;
+            margin: 0 auto;
+        }
+
+        .pillars {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+            gap: 1.25rem;
+            margin-bottom: 3rem;
+        }
+
+        .pillar-card {
+            background: #fff;
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 1.5rem;
+            box-shadow: 0 4px 20px rgba(0,33,71,0.05);
+        }
+
+        .pillar-icon {
+            width: 40px;
+            height: 40px;
+            background: rgba(0,51,102,0.08);
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.1rem;
+            margin-bottom: 1rem;
+        }
+
+        .pillar-card h3 {
+            font-family: var(--font-serif);
+            font-size: 1rem;
+            color: var(--navy-mid);
+            margin-bottom: 0.5rem;
+        }
+
+        .pillar-card p {
+            font-size: 0.85rem;
+            color: var(--muted);
+            line-height: 1.65;
+        }
+
+        .section-title {
+            font-family: var(--font-serif);
+            font-size: 1.25rem;
+            color: var(--navy-mid);
+            margin-bottom: 1.25rem;
+            padding-bottom: 0.5rem;
+            border-bottom: 2px solid var(--gold);
+            display: inline-block;
+        }
+
+        .process-steps {
+            display: grid;
+            gap: 0.75rem;
+            margin-bottom: 3rem;
+        }
+
+        .step {
+            display: flex;
+            align-items: flex-start;
+            gap: 1rem;
+            background: #fff;
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 1rem 1.25rem;
+        }
+
+        .step-num {
+            width: 28px;
+            height: 28px;
+            background: var(--navy-mid);
+            color: #fff;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.75rem;
+            font-weight: 600;
+            flex-shrink: 0;
+            margin-top: 1px;
+        }
+
+        .step-content h4 {
+            font-size: 0.9rem;
+            font-weight: 600;
+            color: var(--ink);
+            margin-bottom: 0.2rem;
+        }
+
+        .step-content p {
+            font-size: 0.82rem;
+            color: var(--muted);
+            line-height: 1.55;
+        }
+
+        .step-content code {
+            font-family: var(--font-mono);
+            font-size: 0.75rem;
+            background: rgba(0,33,71,0.06);
+            padding: 1px 5px;
+            border-radius: 3px;
+            color: var(--navy-mid);
+        }
+
+        /* ── OFFICIAL BAND ── */
+        .official-band {
+            background: var(--navy-deep);
+            border-top: 3px solid var(--gold);
+            border-bottom: 3px solid var(--gold);
+            padding: 2.5rem 1.5rem;
+            text-align: center;
+            position: relative;
+            overflow: hidden;
+            margin-bottom: 0;
+        }
+
+        .official-band::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background:
+                repeating-linear-gradient(90deg, transparent, transparent 40px, rgba(201,168,76,0.04) 40px, rgba(201,168,76,0.04) 41px),
+                repeating-linear-gradient(0deg,  transparent, transparent 40px, rgba(201,168,76,0.04) 40px, rgba(201,168,76,0.04) 41px);
+            pointer-events: none;
+        }
+
+        .official-inner {
+            max-width: 600px;
+            margin: 0 auto;
+            position: relative;
+        }
+
+        .official-label {
+            font-size: 0.65rem;
+            font-weight: 600;
+            letter-spacing: 0.2em;
+            text-transform: uppercase;
+            color: var(--gold);
+            margin-bottom: 0.75rem;
+        }
+
+        .official-name {
+            font-family: var(--font-serif);
+            font-size: 1.6rem;
+            font-weight: 700;
+            color: var(--white);
+            margin-bottom: 0.3rem;
+        }
+
+        .official-position {
+            font-size: 0.85rem;
+            color: rgba(201,168,76,0.85);
+            margin-bottom: 1.5rem;
+        }
+
+        .official-divider {
+            width: 60px;
+            height: 2px;
+            background: var(--gold);
+            margin: 1.25rem auto;
+            opacity: 0.6;
+        }
+
+        .official-quote {
+            font-family: var(--font-serif);
+            font-size: 1rem;
+            font-style: italic;
+            color: rgba(255,255,255,0.85);
+            line-height: 1.75;
+            max-width: 520px;
+            margin: 0 auto;
+        }
+
+        .official-quote::before { content: '\201C'; color: var(--gold); font-size: 1.4rem; line-height: 0; vertical-align: -0.3em; margin-right: 2px; }
+        .official-quote::after  { content: '\201D'; color: var(--gold); font-size: 1.4rem; line-height: 0; vertical-align: -0.3em; margin-left: 2px; }
+
+        /* ── DTI ── */
+        .dti-section { margin-bottom: 3rem; }
+
+        .dti-card {
+            background: #fff;
+            border: 1px solid var(--border);
+            border-left: 4px solid var(--gold);
+            border-radius: 0 12px 12px 0;
+            padding: 1.5rem 1.75rem;
+            box-shadow: 0 4px 20px rgba(0,33,71,0.05);
+        }
+
+        .dti-header {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            margin-bottom: 1.25rem;
+            flex-wrap: wrap;
+        }
+
+        .dti-badge {
+            background: var(--navy-mid);
+            color: #fff;
+            font-size: 0.65rem;
+            font-weight: 600;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+            padding: 4px 10px;
+            border-radius: 4px;
+            flex-shrink: 0;
+        }
+
+        .dti-header h3 {
+            font-family: var(--font-serif);
+            font-size: 1rem;
+            color: var(--navy-mid);
+        }
+
+        .dti-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+        }
+
+        .dti-field { display: flex; flex-direction: column; gap: 0.2rem; }
+
+        .dti-label {
+            font-size: 0.65rem;
+            font-weight: 600;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+            color: var(--muted);
+        }
+
+        .dti-value { font-size: 0.875rem; font-weight: 600; color: var(--ink); }
+        .dti-value.mono { font-family: var(--font-mono); font-size: 0.78rem; color: var(--navy-mid); }
+        .dti-value.gold { color: #8a6a14; }
+
+        .footer-nav {
+            display: flex;
+            justify-content: center;
+            gap: 0.25rem;
+            border-top: 1px solid var(--border);
+            padding-top: 1.5rem;
+            margin-top: 2rem;
+        }
+
+        .footer-nav a {
+            font-size: 0.83rem;
+            color: var(--muted);
+            text-decoration: none;
+            padding: 0.4rem 1rem;
+            border-radius: 6px;
+            transition: background 0.15s, color 0.15s;
+        }
+
+        .footer-nav a:hover { background: rgba(0,33,71,0.06); color: var(--navy-mid); }
+        .footer-nav a.active { color: var(--navy-mid); font-weight: 600; background: rgba(0,33,71,0.06); }
+
+        .site-footer {
+            text-align: center;
+            padding: 1.5rem;
+            font-size: 0.75rem;
+            color: var(--muted);
+            border-top: 1px solid rgba(0,0,0,0.07);
+        }
+
+        .site-footer strong { color: var(--navy-mid); }
+
+        @media (max-width: 600px) {
+            .official-name { font-size: 1.3rem; }
+        }
+    </style>
+</head>
+<body>
+
+    <header class="site-header">
+        <div class="header-inner">
+            <p class="republic-label">Republic of the Philippines</p>
+            <div class="seal-line">
+                <div class="seal-ornament"></div>
+                <div class="seal-diamond"></div>
+                <div class="seal-ornament"></div>
+            </div>
+            <h1>About TruthChain</h1>
+            <p class="subtitle" data-orp-lgu-name>Loading…</p>
+        </div>
+    </header>
+
+    <main>
+        <div class="content-wrap">
+
+            <div class="intro-section">
+                <h2>Governance You Can Verify</h2>
+                <p>OpenResPublica TruthChain is a pilot initiative by <span data-orp-lgu-name>Loading…</span> to modernize local governance using cryptographic principles. Every official document issued carries a permanent, tamper-proof fingerprint anchored to an immutable ledger — visible to all, alterable by none.</p>
+            </div>
+
+            <div class="pillars">
+                <div class="pillar-card">
+                    <div class="pillar-icon">🔐</div>
+                    <h3>Immutable Ledger</h3>
+                    <p>Every document hash is stored in immudb. Once recorded, it cannot be deleted or modified by anyone — not even system administrators — ensuring total accountability.</p>
+                </div>
+                <div class="pillar-card">
+                    <div class="pillar-icon">🧮</div>
+                    <h3>Zero Trust Verification</h3>
+                    <p>We don't ask you to trust a person. We ask you to trust the math. SHA-256 fingerprinting and Ed25519 cryptography ensure every document's authenticity is provable.</p>
+                </div>
+                <div class="pillar-card">
+                    <div class="pillar-icon">🌐</div>
+                    <h3>Public Audit Portal</h3>
+                    <p>All records are published to a public GitHub ledger. Any citizen, any time, anywhere in the world can independently verify any document issued by this office.</p>
+                </div>
+            </div>
+
+            <div style="margin-bottom: 0.75rem;">
+                <span class="section-title">How It Works</span>
+            </div>
+            <div class="process-steps">
+                <div class="step">
+                    <div class="step-num">1</div>
+                    <div class="step-content">
+                        <h4>Document is Fingerprinted</h4>
+                        <p>The original PDF is hashed using <code>SHA-256</code> — producing a unique 64-character fingerprint. Any alteration, even a single pixel, produces a completely different hash.</p>
+                    </div>
+                </div>
+                <div class="step">
+                    <div class="step-num">2</div>
+                    <div class="step-content">
+                        <h4>Authority Signs the Hash</h4>
+                        <p>The Punong Barangay's office signs the fingerprint using <code>Ed25519</code> elliptic curve cryptography — mathematically binding the document to this office.</p>
+                    </div>
+                </div>
+                <div class="step">
+                    <div class="step-num">3</div>
+                    <div class="step-content">
+                        <h4>Anchored to immudb</h4>
+                        <p>The hash is written to <code>immudb</code> — an immutable, append-only database. The transaction ID serves as permanent proof of the exact time of issuance.</p>
+                    </div>
+                </div>
+                <div class="step">
+                    <div class="step-num">4</div>
+                    <div class="step-content">
+                        <h4>Published to Public Ledger</h4>
+                        <p>Metadata is committed to this GitHub portal within 90 seconds of stamping. Citizens can verify any document by scanning its <code>QR code</code> or entering its fingerprint.</p>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+
+        <!-- OFFICIAL BAND — full bleed -->
+        <div class="official-band">
+            <div class="official-inner">
+                <p class="official-label">Authorized &amp; Championed By</p>
+                <h3 class="official-name" data-orp-signer-name>Loading…</h3>
+                <p class="official-position" data-orp-signer-position>Loading…</p>
+                <div class="official-divider"></div>
+                <!-- <p class="official-quote">A public servant's word must be written not just in ink, but in mathematics — so that no power on earth can erase it.</p> -->
+            </div>
+        </div>
+
+        <div class="content-wrap">
+
+            <div class="dti-section">
+                <div style="margin-bottom: 0.75rem;">
+                    <span class="section-title">DTI Registered Entity</span>
+                </div>
+                <div class="dti-card">
+                    <div class="dti-header">
+                        <span class="dti-badge">DTI Certified</span>
+                        <h3>OpenResPublica Information Technology Solutions</h3>
+                    </div>
+                    <div class="dti-grid">
+                        <div class="dti-field">
+                            <span class="dti-label">Business Name</span>
+                            <span class="dti-value">OpenResPublica Information Technology Solutions</span>
+                        </div>
+                        <div class="dti-field">
+                            <span class="dti-label">Registered Owner</span>
+                            <span class="dti-value">Marco Catapusan Fernandez</span>
+                        </div>
+                        <div class="dti-field">
+                            <span class="dti-label">Business Name No.</span>
+                            <span class="dti-value mono">7643594</span>
+                        </div>
+                        <div class="dti-field">
+                            <span class="dti-label">PORE No.</span>
+                            <span class="dti-value mono">PORE606818386933</span>
+                        </div>
+                        <div class="dti-field">
+                            <span class="dti-label">Address</span>
+                            <span class="dti-value">Bunao, City of Dumaguete, Negros Oriental</span>
+                        </div>
+                        <div class="dti-field">
+                            <span class="dti-label">Validity</span>
+                            <span class="dti-value gold">Dec 22, 2025 — Dec 22, 2030</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <nav class="footer-nav">
+                <a href="index.html">Verifier</a>
+                <a href="records.html">Public Ledger</a>
+                <a href="about.html" class="active">About</a>
+            </nav>
+
+        </div>
+    </main>
+
+    <footer class="site-footer">
+        Secured by <strong>immudb</strong> &amp; Ed25519 cryptography &nbsp;·&nbsp;
+        <strong>OpenResPublica TruthChain</strong> &nbsp;·&nbsp; <span data-orp-lgu-name>Loading…</span>
+    </footer>
+
+    <!-- Load runtime config and then other scripts -->
+    <script src="assets/config-loader.js"></script>
+</body>
+</html>
