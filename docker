@@ -1,0 +1,2395 @@
+orp@DESKTOP-LPJOLR4:~/orp-v1.0$ ls
+docker-compose.yml  ghost-vault  immudb  nginx  orp-engine  pki  secrets
+orp@DESKTOP-LPJOLR4:~/orp-v1.0$ cat docker-compose.yml
+services:
+  pki-init:
+    build:
+      context: ./pki
+      dockerfile: Dockerfile
+    container_name: orp_pki_init
+    user: "0:0"
+    network_mode: none
+    restart: "no"
+    volumes:
+      - pki_vol:/pki
+    secrets:
+      - source: operator_p12_password
+        mode: 0400
+
+  immudb:
+    image: codenotary/immudb:1.10.0
+    container_name: orp_immudb
+    restart: unless-stopped
+    group_add:
+      - "8000"
+    networks:
+      - backend_net
+    expose:
+      - "3322"
+    volumes:
+      - immudb_vol:/var/lib/immudb
+      - pki_vol:/pki:ro
+    environment:
+      IMMUDB_DIR: /var/lib/immudb
+      IMMUDB_ADDRESS: 0.0.0.0
+      IMMUDB_PORT: "3322"
+      IMMUDB_MTLS: "true"
+      IMMUDB_MTLS_CAS: /pki/ca/ca.crt
+      IMMUDB_CERTIFICATE: /pki/immudb/immudb.crt
+      IMMUDB_PKEY: /pki/immudb/immudb.key
+    secrets:
+      - source: immudb_admin_password
+        mode: 0400
+    healthcheck:
+      # Using 'sh -c' ensures compatibility with more base images
+      test: ["CMD-SHELL", "sh -c 'nc -z localhost 3322 || exit 1'"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    depends_on:
+      pki-init:
+        condition: service_completed_successfully
+
+  orp-engine:
+    build:
+      context: ./orp-engine
+      dockerfile: Dockerfile
+    container_name: orp_engine
+    restart: unless-stopped
+    networks:
+      - backend_net
+    expose:
+      - "8000"
+    volumes:
+      - pki_vol:/pki:ro
+      - records_vol:/app/repo/docs
+    environment:
+      ORP_CONTAINER_MODE: "1"
+      GNUPGHOME: /dev/shm/gnupg
+      IMMUDB_HOST: orp_immudb
+      IMMUDB_PORT: "3322"
+      IMMUDB_USER: orp_operator
+      IMMUDB_DB: orp_db
+      IMMUDB_CLIENT_CERT: /pki/engine/engine.crt
+      IMMUDB_CLIENT_KEY: /pki/engine/engine.key
+      IMMUDB_CA_CERT: /pki/ca/ca.crt
+      OPERATOR_GPG_EMAIL: "${OPERATOR_GPG_EMAIL}"
+      LGU_NAME: "${LGU_NAME}"
+      LGU_SIGNER_NAME: "${LGU_SIGNER_NAME}"
+      LGU_SIGNER_POSITION: "${LGU_SIGNER_POSITION}"
+      LGU_TIMEZONE: "${LGU_TIMEZONE:-Asia/Manila}"
+      GITHUB_REPO_PATH: /app/repo
+      GITHUB_PORTAL_URL: "${GITHUB_PORTAL_URL}"
+      FLASK_ENV: production
+      FLASK_PORT: "8000"
+      PYTHONUNBUFFERED: "1"
+      FLASK_SECRET_KEY_FILE: /run/secrets/flask_secret_key
+    secrets:
+      - source: immudb_password
+        mode: 0400
+      - source: flask_secret_key
+        mode: 0400
+    depends_on:
+      pki-init:
+        condition: service_completed_successfully
+      immudb:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8000/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  nginx-mtls:
+    build:
+      context: ./nginx
+      dockerfile: Dockerfile
+    container_name: orp_nginx
+    restart: unless-stopped
+    networks:
+      - frontend_net
+      - backend_net
+    ports:
+      - "9443:9443"
+    volumes:
+      - pki_vol:/pki:ro
+    depends_on:
+      orp-engine:
+        condition: service_healthy
+
+# --- GLOBAL CONFIGURATION ---
+
+networks:
+  frontend_net:
+    name: orp_frontend
+  backend_net:
+    name: orp_backend
+    internal: true
+
+volumes:
+  pki_vol:
+    name: orp_pki
+  immudb_vol:
+    name: orp_immudb_data
+  records_vol:
+    name: orp_records
+
+secrets:
+  immudb_password:
+    file: ./secrets/immudb_password.txt
+  immudb_admin_password:
+    file: ./secrets/immudb_admin_password.txt
+  operator_p12_password:
+    file: ./secrets/operator_p12_password.txt
+  flask_secret_key:
+    file: ./secrets/flask_secret_key.txt
+orp@DESKTOP-LPJOLR4:~/orp-v1.0$ ls
+docker-compose.yml  ghost-vault  immudb  nginx  orp-engine  pki  secrets
+orp@DESKTOP-LPJOLR4:~/orp-v1.0$ cd ..
+orp@DESKTOP-LPJOLR4:~$ ls -la orp-v1.0
+total 48
+drwxr-xr-x  8 orp orp 4096 May  7 21:39 .
+drwxr-x--- 10 orp orp 4096 May  7 21:41 ..
+-rw-------  1 orp orp 3488 May  7 13:12 .env
+-rw-r--r--  1 orp orp 3203 May  7 12:31 .env.template
+-rw-r--r--  1 orp orp   14 May  7 12:41 .gitignore
+-rw-r--r--  1 orp orp 3514 May  7 19:47 docker-compose.yml
+drwxr-xr-x  2 orp orp 4096 May  7 21:37 ghost-vault
+drwxr-xr-x  2 orp orp 4096 May  7 19:48 immudb
+drwxr-xr-x  2 orp orp 4096 May  7 19:12 nginx
+drwxr-xr-x  4 orp orp 4096 May  7 19:13 orp-engine
+drwxr-xr-x  2 orp orp 4096 May  7 19:12 pki
+drwxr-xr-x  2 orp orp 4096 May  7 19:33 secrets
+orp@DESKTOP-LPJOLR4:~$ cat orp-v1.0/.env,.env.template,.gitignore
+cat: orp-v1.0/.env,.env.template,.gitignore: No such file or directory
+orp@DESKTOP-LPJOLR4:~$ cat orp-v1.0/.env
+# =============================================================================
+# ORP v1.0 — Environment Template
+# .env.template
+#
+# Copy this file to .env and fill in all values before first run:
+#   cp .env.template .env
+#   chmod 600 .env               ← restrict to owner only
+#   echo ".env" >> .gitignore    ← NEVER commit this file
+#
+# docker-compose.yml reads these via ${VARIABLE} interpolation.
+# Variables left empty will cause the corresponding service to fail
+# with a clear error message on startup.
+#
+# After editing .env, validate with:
+#   docker compose config       ← shows fully-interpolated compose file
+# =============================================================================
+
+# =============================================================================
+# GPG IDENTITY
+# The email address of the GPG key used to sign JSON records.
+# Must match a key imported into /dev/shm/gnupg inside the orp-engine container.
+# The operator imports their GPG private key via `docker exec` after first boot.
+#
+# Example: operator01@orp.local
+# =============================================================================
+OPERATOR_GPG_EMAIL=marcofernandez0204@gmail.com
+
+# =============================================================================
+# LGU OPERATIONAL CONFIG
+# These values appear on stamped PDFs and signed JSON records.
+# Adjust per barangay / LGU deployment.
+# =============================================================================
+LGU_NAME=SANGGUNIANG KABATAAN OF BARANGAY BUNAO
+LGU_SIGNER_NAME=HON. MARCO C. FERNANDEZ
+LGU_SIGNER_POSITION=SK MEMBER/BUDGET MONITORING OFFICER
+LGU_TIMEZONE=Asia/Manila
+
+# =============================================================================
+# VERIFICATION PORTAL
+# Public URL where citizens verify stamped documents.
+# QR codes on stamped PDFs point here.
+#
+# Example: https://openrespublica.github.io/verify.html
+# =============================================================================
+GITHUB_PORTAL_URL=https://openrespublica.github.io/verify.html
+
+# =============================================================================
+# FLASK SECRET KEY
+# Used for CSRF token generation and session cookie signing.
+# Must be stable across restarts — a new key invalidates all active sessions.
+# Generate with: openssl rand -hex 32
+#
+# Upgrade path: move to Docker secret if this needs stricter protection.
+# For now, .env with chmod 600 is acceptable.
+# =============================================================================
+#FLASK_SECRET_KEY=bdc8111ed4e5514996261c3f00028f20b43c857c0de974e773967f93a3ff2388
+FLASK_SECRET_KEY_FILE: /run/secrets/flask_secret_key
+# =============================================================================
+# HOW TO CREATE DOCKER SECRETS (run once before `docker compose up`)
+# =============================================================================
+#
+#   mkdir -p ./secrets
+#
+#   # Strong random passwords — do not use human-chosen passwords here
+#   echo -n "$(openssl rand -base64 32)" > ./secrets/immudb_password.txt
+#   echo -n "$(openssl rand -base64 32)" > ./secrets/immudb_admin_password.txt
+#   echo -n "$(openssl rand -base64 32)" > ./secrets/operator_p12_password.txt
+#
+#   chmod 600 ./secrets/*.txt
+#   echo "secrets/" >> .gitignore
+#
+# The operator_p12_password is the password the operator uses when importing
+# operator01.p12 into their browser. Share it with the operator out-of-band
+# (separate from the .p12 file itself).
+orp@DESKTOP-LPJOLR4:~$ cat orp-v1.0/.env.template
+# =============================================================================
+# ORP v1.0 — Environment Template
+# .env.template
+#
+# Copy this file to .env and fill in all values before first run:
+#   cp .env.template .env
+#   chmod 600 .env               ← restrict to owner only
+#   echo ".env" >> .gitignore    ← NEVER commit this file
+#
+# docker-compose.yml reads these via ${VARIABLE} interpolation.
+# Variables left empty will cause the corresponding service to fail
+# with a clear error message on startup.
+#
+# After editing .env, validate with:
+#   docker compose config       ← shows fully-interpolated compose file
+# =============================================================================
+
+# =============================================================================
+# GPG IDENTITY
+# The email address of the GPG key used to sign JSON records.
+# Must match a key imported into /dev/shm/gnupg inside the orp-engine container.
+# The operator imports their GPG private key via `docker exec` after first boot.
+#
+# Example: operator01@orp.local
+# =============================================================================
+OPERATOR_GPG_EMAIL=
+
+# =============================================================================
+# LGU OPERATIONAL CONFIG
+# These values appear on stamped PDFs and signed JSON records.
+# Adjust per barangay / LGU deployment.
+# =============================================================================
+LGU_NAME=
+LGU_SIGNER_NAME=
+LGU_SIGNER_POSITION=
+LGU_TIMEZONE=Asia/Manila
+
+# =============================================================================
+# VERIFICATION PORTAL
+# Public URL where citizens verify stamped documents.
+# QR codes on stamped PDFs point here.
+#
+# Example: https://openrespublica.github.io/verify.html
+# =============================================================================
+GITHUB_PORTAL_URL=
+
+# =============================================================================
+# FLASK SECRET KEY
+# Used for CSRF token generation and session cookie signing.
+# Must be stable across restarts — a new key invalidates all active sessions.
+# Generate with: openssl rand -hex 32
+#
+# Upgrade path: move to Docker secret if this needs stricter protection.
+# For now, .env with chmod 600 is acceptable.
+# =============================================================================
+FLASK_SECRET_KEY=
+
+# =============================================================================
+# HOW TO CREATE DOCKER SECRETS (run once before `docker compose up`)
+# =============================================================================
+#
+#   mkdir -p ./secrets
+#
+#   # Strong random passwords — do not use human-chosen passwords here
+#   echo -n "$(openssl rand -base64 32)" > ./secrets/immudb_password.txt
+#   echo -n "$(openssl rand -base64 32)" > ./secrets/immudb_admin_password.txt
+#   echo -n "$(openssl rand -base64 32)" > ./secrets/operator_p12_password.txt
+#
+#   chmod 600 ./secrets/*.txt
+#   echo "secrets/" >> .gitignore
+#
+# The operator_p12_password is the password the operator uses when importing
+# operator01.p12 into their browser. Share it with the operator out-of-band
+# (separate from the .p12 file itself).
+orp@DESKTOP-LPJOLR4:~$ cat orp-v1.0/.gitignore
+secrets/
+.env
+orp@DESKTOP-LPJOLR4:~$ ls
+barangay-document-classifier  docker-compose.yml  docker_install_wsl2.sh  ghost-vault  orp-v1.0
+orp@DESKTOP-LPJOLR4:~$
+
+orp@DESKTOP-LPJOLR4:~/orp-v1.0/nginx$ cat Dockerfile entrypoint.sh nginx.conf orp_engine.conf.tpl
+FROM alpine:3.21
+ENV PKI_DIR=/pki \
+    FLASK_PORT=8000
+
+RUN apk add --no-cache \
+    nginx \
+    gettext
+
+RUN addgroup -S nginxgrp && \
+    adduser -S -D -H \
+    -h /nonexistent \
+    -s /sbin/nologin \
+    -G nginxgrp \
+    nginxusr
+
+RUN addgroup -g 8000 pkireaders && adduser nginxusr pkireaders
+
+RUN mkdir -p \
+    /run/nginx \
+    /var/cache/nginx \
+    /etc/nginx/conf.d \
+    /tmp/nginx_client_temp && \
+    chown -R nginxusr:nginxgrp \
+    /run/nginx \
+    /var/cache/nginx \
+    /etc/nginx \
+    /tmp/nginx_client_temp
+
+COPY nginx.conf /etc/nginx/nginx.conf
+
+COPY orp_engine.conf.tpl /etc/nginx/templates/orp_engine.conf.tpl
+
+COPY entrypoint.sh /entrypoint.sh
+
+RUN chmod 755 /entrypoint.sh
+
+USER nginxusr
+
+EXPOSE 9443
+
+ENTRYPOINT ["/entrypoint.sh"]
+
+CMD ["nginx", "-g", "daemon off;"]
+#!/bin/sh
+set -eu
+
+TEMPLATE="/etc/nginx/templates/orp_engine.conf.tpl"
+OUTPUT="/etc/nginx/conf.d/orp_engine.conf"
+
+echo "[*] Validating PKI assets..."
+
+for cert in \
+    "$PKI_DIR/nginx/nginx.crt" \
+    "$PKI_DIR/nginx/nginx.key" \
+    "$PKI_DIR/ca/ca.crt"
+do
+    if [ ! -f "$cert" ]; then
+        echo "[ERROR] Missing certificate: $cert"
+        exit 1
+    fi
+done
+
+echo "[*] Rendering nginx template..."
+
+envsubst '${PKI_DIR} ${FLASK_PORT}' \
+    < "$TEMPLATE" \
+    > "$OUTPUT"
+
+echo "[*] Testing nginx configuration..."
+
+nginx -t
+
+echo "[*] Starting nginx..."
+
+exec "$@"
+worker_processes auto;
+
+pid /run/nginx/nginx.pid;
+
+events {
+    worker_connections 1024;
+    use epoll;
+    multi_accept on;
+}
+
+http {
+    include      /etc/nginx/mime.types;
+    default_type application/octet-stream;
+
+    server_tokens off;
+
+    sendfile    on;
+    tcp_nopush  on;
+    tcp_nodelay on;
+
+    keepalive_timeout 65;
+
+    client_body_temp_path /tmp/nginx_client_temp;
+
+    log_format main '$remote_addr - $remote_user [$time_local] '
+                    '"$request" $status $body_bytes_sent '
+                    '"$http_referer" "$http_user_agent" '
+                    'ssl_verify=$ssl_client_verify '
+                    'operator="$ssl_client_s_dn"';
+
+    access_log /dev/stdout main;
+    error_log  /dev/stderr warn;
+
+    ssl_session_cache   shared:SSL:10m;
+    ssl_session_timeout 1d;
+    ssl_session_tickets off;
+    include /etc/nginx/conf.d/*.conf;
+}
+server {
+    listen      9443 ssl http2;
+    server_name _;
+
+    server_tokens off;
+
+    ssl_certificate     ${PKI_DIR}/nginx/nginx.crt;
+    ssl_certificate_key ${PKI_DIR}/nginx/nginx.key;
+
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_prefer_server_ciphers on;
+    ssl_ciphers "ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:TLS_AES_128_GCM_SHA256:TLS_AES_256_GCM_SHA384";
+
+    ssl_session_timeout 1d;
+    ssl_session_tickets off;
+
+    ssl_stapling        off;
+    ssl_stapling_verify off;
+
+    ssl_client_certificate ${PKI_DIR}/ca/ca.crt;
+    ssl_verify_client      on;
+    ssl_verify_depth       1;
+
+    add_header Strict-Transport-Security "max-age=63072000; includeSubDomains" always;
+
+    add_header X-Frame-Options "DENY" always;
+
+    add_header X-Content-Type-Options "nosniff" always;
+
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+
+    add_header Content-Security-Policy "default-src 'self'; frame-ancestors 'none';" always;
+
+    add_header Permissions-Policy "geolocation=(), microphone=(), camera=()" always;
+
+    client_max_body_size   20M;
+    client_body_timeout    15s;
+    client_header_timeout  15s;
+    keepalive_timeout      30s;
+    send_timeout           15s;
+
+    location / {
+
+        proxy_pass http://orp-engine:${FLASK_PORT};
+        proxy_http_version 1.1;
+        proxy_set_header   Connection "";
+        proxy_set_header X-Operator-ID       $ssl_client_s_dn;
+        proxy_set_header X-SSL-Client-Verify $ssl_client_verify;
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Host  $host;
+        proxy_set_header X-Forwarded-Port  $server_port;
+        proxy_connect_timeout 10s;
+        proxy_send_timeout    30s;
+        proxy_read_timeout    120s;
+        proxy_buffering    on;
+        proxy_buffers      16 16k;
+        proxy_buffer_size  16k;
+        proxy_hide_header  X-Powered-By;
+        proxy_hide_header  Server;
+    }
+
+    location = /health {
+        access_log   off;
+        default_type application/json;
+        return 200 '{"status":"ok","service":"orp-nginx"}';
+    }
+
+    location ~ /\.(?!well-known).* {
+        deny          all;
+        access_log    off;
+        log_not_found off;
+    }
+
+    error_page 495 496 = @cert_error;
+
+    location @cert_error {
+
+        internal;
+        default_type text/html;
+
+        return 403 '<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Access Denied — ORP Engine</title>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:system-ui,-apple-system,sans-serif;background:#f8fafc;
+display:flex;align-items:center;justify-content:center;
+min-height:100vh;padding:2rem;}
+.card{background:#fff;border:1px solid #e2e8f0;border-radius:12px;
+box-shadow:0 4px 24px rgba(0,0,0,.08);padding:3rem 2.5rem;
+max-width:480px;text-align:center;}
+.icon{font-size:3rem;margin-bottom:1rem;}
+h1{font-size:1.4rem;color:#b91c1c;margin-bottom:.75rem;}
+p{color:#6b7280;line-height:1.65;margin-bottom:.75rem;font-size:.92rem;}
+code{display:block;margin-top:1.25rem;background:#f1f5f9;
+border-left:3px solid #b91c1c;padding:.75rem 1rem;
+border-radius:0 6px 6px 0;font-family:monospace;
+font-size:.8rem;color:#1e293b;text-align:left;}
+</style>
+</head>
+<body>
+<div class="card">
+<div class="icon">🚫</div>
+<h1>Sovereign Identity Required</h1>
+<p>A valid operator certificate signed by the ORP Sovereign Root CA
+is required to access this portal.</p>
+<p>Contact your system administrator to obtain
+<strong>operator01.p12</strong> and import it into your browser.</p>
+<code>HTTP 495/496 — Client Certificate Missing or Invalid</code>
+</div>
+</body>
+</html>';
+    }
+}
+orp@DESKTOP-LPJOLR4:~/orp-v1.0/nginx$
+
+orp@DESKTOP-LPJOLR4:~/orp-v1.0$ cat orp-engine/.dockerignore
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+
+# Virtual environments
+venv/
+.venv/
+env/
+
+# Logs
+*.log
+logs/
+
+# Temp/cache
+tmp/
+temp/
+.cache/
+.pytest_cache/
+.mypy_cache/
+
+# Git
+.git/
+.gitignore
+
+# IDEs/editors
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Environment/secrets
+.env
+.env.*
+*.pem
+*.key
+*.crt
+*.csr
+*.p12
+*.pfx
+*.gpg
+*.asc
+
+# Databases
+*.db
+*.sqlite
+*.sqlite3
+
+# Docker
+docker-compose*.yml
+
+# Tests/docs
+tests/
+docs/
+
+# OS junk
+.DS_Store
+Thumbs.db
+
+# Docker own files
+Dockerfile
+.dockerignore
+entrypoint.sh    # already copied explicitly above
+orp@DESKTOP-LPJOLR4:~/orp-v1.0$ cd orp-engine
+orp@DESKTOP-LPJOLR4:~/orp-v1.0/orp-engine$ ls
+Dockerfile  entrypoint.sh  main.py  requirements.txt  static  templates
+orp@DESKTOP-LPJOLR4:~/orp-v1.0/orp-engine$ cat main.py entrypoint.sh Dockerfile requirements.txt
+# main.py — OpenResPublica Hardened Engine
+# Secure PDF Verification + OCR + Classification + Privacy-Aware Metadata Extraction
+#
+# CONTAINER CHANGES (3 surgical fixes for Docker):
+#   ① getpass removed        → reads /run/secrets/immudb_password (tmpfs)
+#   ② SSH_AUTH_SOCK bypassed → ORP_CONTAINER_MODE=1 skips SSH agent check
+#   ③ client retry added     → handles immudb startup window after healthcheck
+
+import os
+import io
+import re
+import json
+import time
+import signal
+import hashlib
+import logging
+import logging.config
+import datetime
+import threading
+import subprocess
+import fcntl
+
+import pytz
+import qrcode
+import magic
+import gnupg
+
+from dotenv import load_dotenv
+
+from flask import (
+    Flask,
+    request,
+    jsonify,
+    send_file,
+    render_template
+)
+
+from flask_wtf.csrf import CSRFProtect
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
+
+from werkzeug.utils import secure_filename
+
+from immudb.client import ImmudbClient
+
+from pypdf import PdfReader, PdfWriter
+
+from reportlab.pdfgen import canvas
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.units import mm
+from reportlab.lib.utils import ImageReader
+
+from pdf2image import convert_from_bytes
+import pytesseract
+
+# =============================================================================
+# ENVIRONMENT
+# =============================================================================
+
+load_dotenv()
+
+# =============================================================================
+# LOGGING
+# =============================================================================
+
+LOG_CONFIG_FILE = os.path.join(
+    os.path.dirname(__file__),
+    "logging.conf"
+)
+
+if os.path.exists(LOG_CONFIG_FILE):
+    logging.config.fileConfig(LOG_CONFIG_FILE)
+else:
+    logging.basicConfig(level=logging.INFO)
+
+logger = logging.getLogger("orp.engine")
+
+# =============================================================================
+# SECURITY CONSTANTS
+# =============================================================================
+
+MAX_PDF_SIZE      = 50 * 1024 * 1024
+ALLOWED_MIMES     = {"application/pdf"}
+UPLOAD_RATE_LIMIT = "10 per minute"
+API_RATE_LIMIT    = "100 per hour"
+
+# =============================================================================
+# ENVIRONMENT VALIDATION
+# =============================================================================
+
+GPG_HOME      = os.getenv("GNUPGHOME")
+GPG_EMAIL     = os.getenv("OPERATOR_GPG_EMAIL")
+SSH_AUTH_SOCK = os.getenv("SSH_AUTH_SOCK")
+
+# ── CHANGE 2 ─────────────────────────────────────────────────────────────────
+# ORP_CONTAINER_MODE=1 is set in docker-compose.yml environment block.
+# In container mode, SSH_AUTH_SOCK is not checked — the SSH agent lives on
+# the host and is not forwarded into the container. Git push operations
+# are handled outside the container boundary (separate CI/CD concern).
+# When running locally via the ORP bootloader, CONTAINER_MODE=0 (default)
+# and the original full three-variable check applies unchanged.
+# ─────────────────────────────────────────────────────────────────────────────
+CONTAINER_MODE = os.getenv("ORP_CONTAINER_MODE", "0") == "1"
+
+if CONTAINER_MODE:
+    if not all([GPG_HOME, GPG_EMAIL]):
+        raise RuntimeError(
+            "GNUPGHOME and OPERATOR_GPG_EMAIL are required in container mode. "
+            "Set them in docker-compose.yml environment block."
+        )
+else:
+    if not all([GPG_HOME, GPG_EMAIL, SSH_AUTH_SOCK]):
+        raise RuntimeError(
+            "Launch using secure ORP bootloader."
+        )
+
+if not GPG_HOME.startswith("/dev/shm/"):
+    raise RuntimeError(
+        "GNUPGHOME must reside in RAM disk (/dev/shm/). "
+        "In container mode, entrypoint.sh creates /dev/shm/gnupg before startup."
+    )
+
+# =============================================================================
+# CONFIG
+# =============================================================================
+
+IMMUDB_HOST = os.getenv("IMMUDB_HOST", "127.0.0.1:3322")
+IMMUDB_USER = os.getenv("IMMUDB_USER", "immudb")
+IMMUDB_DB   = os.getenv("IMMUDB_DB", "defaultdb")
+
+LGU_NAME    = os.getenv("LGU_NAME", "LGU")
+SIGNER_NAME = os.getenv("LGU_SIGNER_NAME", "Authorized Signatory")
+SIGNER_POS  = os.getenv("LGU_SIGNER_POSITION", "Official")
+TZ_NAME     = os.getenv("LGU_TIMEZONE", "Asia/Manila")
+
+REPO_PATH = os.getenv(
+    "GITHUB_REPO_PATH",
+    "/home/orp/openrespublica.github.io"
+)
+
+GITHUB_PORTAL = os.getenv(
+    "GITHUB_PORTAL_URL",
+    "https://openrespublica.github.io/verify.html"
+)
+
+RECORDS_DIR  = os.path.join(REPO_PATH, "docs", "records")
+CONTROL_FILE = os.path.join(REPO_PATH, "docs", "control_number.txt")
+
+os.makedirs(RECORDS_DIR, exist_ok=True)
+
+# =============================================================================
+# FLASK
+# =============================================================================
+
+app = Flask(
+    __name__,
+    template_folder="templates",
+    static_folder="static"
+)
+
+#app.config["SECRET_KEY"]            = os.getenv("FLASK_SECRET_KEY") or os.urandom(32)
+def load_secret(path):
+    with open(path) as f:
+        return f.read().strip()
+
+secret = load_secret(os.getenv("FLASK_SECRET_KEY_FILE"))
+
+if not secret:
+    raise RuntimeError("Missing Flask secret key")
+
+app.config["SECRET_KEY"] = secret
+
+app.config["SESSION_COOKIE_SECURE"] = True
+app.config["SESSION_COOKIE_HTTPONLY"] = True
+app.config["SESSION_COOKIE_SAMESITE"] = "Strict"
+
+csrf    = CSRFProtect(app)
+limiter = Limiter(
+    app=app,
+    key_func=get_remote_address,
+    default_limits=[API_RATE_LIMIT],
+    storage_uri="memory://"
+)
+
+# =============================================================================
+# THREAD LOCKS
+# =============================================================================
+
+ctrl_lock = threading.Lock()
+git_lock  = threading.Lock()
+
+# =============================================================================
+# GPG
+# =============================================================================
+
+gpg = gnupg.GPG(gnupghome=GPG_HOME)
+
+# =============================================================================
+# IMMUDB
+# =============================================================================
+
+_vault_password = None
+
+#def load_secret(path):
+#    with open(path) as f:
+#        return f.read().strip()
+
+#secret = load_secret(os.getenv("FLASK_SECRET_KEY_FILE"))
+
+#if not secret:
+#    raise RuntimeError("Missing Flask secret key")
+
+#app.config["SECRET_KEY"] = secret
+
+def get_client():
+    global _vault_password
+
+    if ":" in IMMUDB_HOST:
+        host, port = IMMUDB_HOST.rsplit(":", 1)
+        port = int(port)
+    else:
+        host, port = IMMUDB_HOST, 3322
+
+    # ── CHANGE 1 ─────────────────────────────────────────────────────────────
+    # getpass.getpass() removed — blocks forever without a TTY.
+    # Password read from Docker secret mounted as tmpfs at
+    # /run/secrets/immudb_password (chmod 400, never in env vars,
+    # never in docker inspect, gone when container stops).
+    # ─────────────────────────────────────────────────────────────────────────
+    if _vault_password is None:
+        _secret = "/run/secrets/immudb_password"
+        try:
+            with open(_secret) as f:
+                _vault_password = f.read().strip()
+        except FileNotFoundError:
+            raise RuntimeError(
+                f"Docker secret not found at {_secret}. "
+                "Ensure immudb_password is declared in compose secrets block "
+                "and ./secrets/immudb_password.txt exists on the host."
+            )
+
+    client = ImmudbClient(f"{host}:{port}")
+    client.login(IMMUDB_USER, _vault_password, database=IMMUDB_DB)
+
+    logger.info("Vault connected")
+    return client
+
+
+# ── CHANGE 3 ─────────────────────────────────────────────────────────────────
+# Module-level client = get_client() wrapped with retry logic.
+#
+# depends_on: service_healthy confirms immudb's TCP port is open.
+# It does NOT confirm immudb has finished internal initialisation
+# (WAL replay, index loading). Without retry, a fast Python startup
+# crashes immediately and enters a restart loop that can corrupt
+# immudb's write-ahead log.
+#
+# 5 attempts × 3s delay = 15s window — covers typical cold-start period.
+# ─────────────────────────────────────────────────────────────────────────────
+def _connect_with_retry(retries: int = 5, delay: int = 3):
+    for attempt in range(1, retries + 1):
+        try:
+            return get_client()
+        except Exception as e:
+            logger.warning(
+                "immudb connection attempt %d/%d failed: %s",
+                attempt, retries, e
+            )
+            if attempt < retries:
+                time.sleep(delay)
+    raise RuntimeError(
+        "immudb unreachable after all retries. "
+        "Check immudb container health and backend_net connectivity."
+    )
+
+
+client = _connect_with_retry()
+
+# =============================================================================
+# SHUTDOWN
+# =============================================================================
+
+
+def graceful_shutdown(signum, frame):
+    logger.warning("Shutdown initiated")
+    try:
+        client.logout()
+    except Exception:
+        pass
+    os._exit(0)
+
+
+signal.signal(signal.SIGTERM, graceful_shutdown)
+signal.signal(signal.SIGINT,  graceful_shutdown)
+
+# =============================================================================
+# OCR + TEXT EXTRACTION
+# =============================================================================
+
+
+def extract_text_from_pdf(pdf_bytes: bytes) -> str:
+    text = ""
+
+    try:
+        reader = PdfReader(io.BytesIO(pdf_bytes))
+        for page in reader.pages:
+            extracted = page.extract_text()
+            if extracted:
+                text += extracted + "\n"
+    except Exception as e:
+        logger.warning(f"PDF extraction failed: {e}")
+
+    if len(text.strip()) < 50:
+        try:
+            logger.info("Running OCR fallback")
+            images   = convert_from_bytes(pdf_bytes, dpi=300)
+            ocr_text = ""
+            for img in images:
+                ocr_text += pytesseract.image_to_string(img)
+            text += "\n" + ocr_text
+        except Exception as e:
+            logger.error(f"OCR failed: {e}")
+
+    return text.strip()
+
+# =============================================================================
+# DOCUMENT CLASSIFIER
+# =============================================================================
+
+
+DOCUMENT_TYPES = {
+    "Barangay Clearance": [
+        "barangay clearance", "good moral", "resident", "clearance"
+    ],
+    "Certificate of Indigency": [
+        "indigent", "certificate of indigency", "financial assistance"
+    ],
+    "Business Permit": [
+        "business permit", "mayor's permit", "business clearance"
+    ],
+    "Blotter Report": [
+        "blotter", "incident", "complainant", "respondent"
+    ],
+    "Residency Certificate": [
+        "resident of", "residing at", "certificate of residency"
+    ]
+}
+
+
+def classify_document(text: str):
+    text_lower       = text.lower()
+    best_match       = "Unknown"
+    best_score       = 0
+    matched_keywords = []
+
+    for doc_type, keywords in DOCUMENT_TYPES.items():
+        score = 0
+        found = []
+        for keyword in keywords:
+            if keyword in text_lower:
+                score += 1
+                found.append(keyword)
+        if score > best_score:
+            best_score       = score
+            best_match       = doc_type
+            matched_keywords = found
+
+    confidence = 0.0
+    if best_score > 0:
+        confidence = round(
+            (best_score / max(len(DOCUMENT_TYPES[best_match]), 1)) * 100, 2
+        )
+
+    return {
+        "document_type":    best_match,
+        "confidence":       confidence,
+        "matched_keywords": matched_keywords
+    }
+
+# =============================================================================
+# PRIVACY-AWARE METADATA EXTRACTION
+# =============================================================================
+
+
+def redact_sensitive_data(text: str) -> str:
+    text = re.sub(r'(\+63\d{10}|09\d{9})', '[REDACTED_PHONE]', text)
+    text = re.sub(r'[\w\.-]+@[\w\.-]+',    '[REDACTED_EMAIL]', text)
+    return text
+
+
+def extract_metadata(text: str):
+    metadata = {"document_reference": None, "document_date": None}
+
+    control_match = re.search(r'\b\d{4}-\d{4}\b', text)
+    if control_match:
+        metadata["document_reference"] = control_match.group(0)
+
+    date_match = re.search(
+        r'\b(?:January|February|March|April|May|June|July|August|'
+        r'September|October|November|December)\s+\d{1,2},\s+\d{4}',
+        text, re.IGNORECASE
+    )
+    if date_match:
+        metadata["document_date"] = date_match.group(0)
+
+    return metadata
+
+# =============================================================================
+# CONTROL NUMBER
+# =============================================================================
+
+
+def next_control_number():
+    with ctrl_lock:
+        local_tz     = pytz.timezone(TZ_NAME)
+        current_year = str(datetime.datetime.now(local_tz).year)
+
+        if not os.path.exists(CONTROL_FILE):
+            fd = os.open(CONTROL_FILE, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+            os.write(fd, b"2026-0000")
+            os.close(fd)
+
+        with open(CONTROL_FILE, "r+") as f:
+            fcntl.flock(f, fcntl.LOCK_EX)
+            try:
+                year, num = f.read().strip().split("-")
+                num = int(num)
+                if year != current_year:
+                    year = current_year
+                    num  = 0
+                new_ctrl = f"{year}-{num + 1:04d}"
+                f.seek(0)
+                f.write(new_ctrl)
+                f.truncate()
+            finally:
+                fcntl.flock(f, fcntl.LOCK_UN)
+
+        return new_ctrl
+
+# =============================================================================
+# QR
+# =============================================================================
+
+
+def generate_qr(sha256_hash):
+    qr_url = f"{GITHUB_PORTAL}?hash={sha256_hash}"
+    qr = qrcode.QRCode(version=1, box_size=10, border=4)
+    qr.add_data(qr_url)
+    img = qr.make_image()
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    buf.seek(0)
+    return buf
+
+# =============================================================================
+# PDF STAMP
+# =============================================================================
+
+
+def add_footer(original_pdf, sha256_hash, qr_buf, timestamp, control_number):
+    reader   = PdfReader(io.BytesIO(original_pdf))
+    writer   = PdfWriter()
+    qr_image = ImageReader(qr_buf)
+
+    for page in reader.pages:
+        packet = io.BytesIO()
+        c = canvas.Canvas(packet, pagesize=A4)
+        c.line(25 * mm, 22 * mm, 185 * mm, 22 * mm)
+        c.setFont("Helvetica", 7)
+        c.drawString(30 * mm, 18 * mm, f"CTRL: {control_number}")
+        c.drawString(30 * mm, 14 * mm, f"TIME: {timestamp}")
+        c.drawString(30 * mm, 10 * mm, f"HASH: {sha256_hash[:24]}...")
+        c.drawImage(qr_image, 165 * mm, 5 * mm, width=15 * mm, height=15 * mm)
+        c.save()
+        packet.seek(0)
+        overlay = PdfReader(packet)
+        page.merge_page(overlay.pages[0])
+        writer.add_page(page)
+
+    output = io.BytesIO()
+    writer.write(output)
+    output.seek(0)
+    return output
+
+# =============================================================================
+# SIGN JSON
+# =============================================================================
+
+
+def sign_json_data(record):
+    data_str = json.dumps(record, sort_keys=True)
+    sig = gpg.sign(data_str, keyid=GPG_EMAIL)
+    if sig.status != "signature created":
+        return None
+    return {
+        "gpg_signature": str(sig),
+        "hash_anchor":   hashlib.sha256(data_str.encode()).hexdigest()
+    }
+
+# =============================================================================
+# ROUTES
+# =============================================================================
+
+
+@app.route("/")
+def home():
+    return render_template("portal.html")
+
+
+@app.route("/health")
+def health():
+    return jsonify({
+        "status":    "healthy",
+        "timestamp": datetime.datetime.now().isoformat()
+    })
+
+
+@app.route("/upload", methods=["POST"])
+@limiter.limit(UPLOAD_RATE_LIMIT)
+@csrf.exempt
+def upload_pdf():
+    global client
+
+    file = request.files.get("document")
+    if not file:
+        return jsonify({"error": "No file uploaded"}), 400
+
+    filename = secure_filename(file.filename)
+    if not filename.lower().endswith(".pdf"):
+        return jsonify({"error": "Only PDF files allowed"}), 400
+
+    file_content = file.read()
+    if len(file_content) > MAX_PDF_SIZE:
+        return jsonify({"error": "PDF exceeds max size"}), 413
+
+    mime_type = magic.from_buffer(file_content[:2048], mime=True)
+    if mime_type not in ALLOWED_MIMES:
+        return jsonify({"error": "Invalid MIME type"}), 415
+
+    sha256_hash    = hashlib.sha256(file_content).hexdigest()
+    extracted_text = extract_text_from_pdf(file_content)
+    extracted_text = redact_sensitive_data(extracted_text)
+    classification = classify_document(extracted_text)
+    metadata       = extract_metadata(extracted_text)
+
+    tx = client.set(sha256_hash.encode(), b"VERIFIED_BY_ORP_ENGINE")
+
+    local_tz     = pytz.timezone(TZ_NAME)
+    timestamp_ph = datetime.datetime.now(local_tz).strftime("%Y-%m-%d %I:%M %p PHT")
+    control_no   = next_control_number()
+    final_ctrl   = f"Verified_{control_no}"
+
+    record = {
+        "status":                    "VERIFIED",
+        "control_number":            final_ctrl,
+        "document_type":             classification["document_type"],
+        "classification_confidence": classification["confidence"],
+        "metadata":                  metadata,
+        "sha256_hash":               sha256_hash,
+        "timestamp":                 timestamp_ph,
+        "immudb_transaction_id":     tx.id,
+        "verification_url":          f"{GITHUB_PORTAL}?hash={sha256_hash}"
+    }
+
+    signature = sign_json_data(record)
+    if signature:
+        record["data_signature"] = signature
+
+    json_path = os.path.join(RECORDS_DIR, f"{final_ctrl}_{sha256_hash[:16]}.json")
+    with open(json_path, "w") as f:
+        json.dump(record, f, indent=4)
+
+    qr_buf      = generate_qr(sha256_hash)
+    stamped_pdf = add_footer(
+        file_content, sha256_hash, qr_buf, timestamp_ph, final_ctrl
+    )
+
+    safe_doc_type   = re.sub(r'[^A-Za-z0-9_-]', '_', classification["document_type"])
+    output_filename = f"{final_ctrl}_{safe_doc_type}_{sha256_hash[:12]}.pdf"
+
+    logger.info("Processed: %s", output_filename)
+
+    return send_file(
+        stamped_pdf,
+        as_attachment=True,
+        download_name=output_filename,
+        mimetype="application/pdf"
+    )
+
+# =============================================================================
+# ENTRYPOINT
+# =============================================================================
+
+if __name__ == "__main__":
+    port = int(os.getenv("FLASK_PORT", 5000))
+    logger.info("ORP Engine starting on 127.0.0.1:%d", port)
+    app.run(host="127.0.0.1", port=port, debug=False)
+#!/bin/bash
+
+set -eu
+
+GREEN='\033[0;32m'; CYAN='\033[0;36m'; RED='\033[0;31m'; NC='\033[0m'
+ok()   { printf "${GREEN}[✔]${NC} %s\n" "$1"; }
+info() { printf "${CYAN}[*]${NC} %s\n" "$1"; }
+die()  { printf "${RED}[✘]${NC} %s\n" "$1" >&2; exit 1; }
+
+info "Setting up GPG home in RAM..."
+
+if [ -z "${GNUPGHOME:-}" ]; then
+    die "GNUPGHOME is not set. Check Dockerfile ENV block."
+fi
+
+if ! echo "${GNUPGHOME}" | grep -q "^/dev/shm/"; then
+    die "GNUPGHOME must reside in /dev/shm/. Got: ${GNUPGHOME}"
+fi
+
+mkdir -p "${GNUPGHOME}"
+chmod 700 "${GNUPGHOME}"
+
+ok "GPG home ready → ${GNUPGHOME} (chmod 700)"
+
+info "Validating Docker secrets..."
+
+SECRET="/run/secrets/immudb_password"
+
+if [ ! -f "${SECRET}" ]; then
+    die "Docker secret not found: ${SECRET}
+     Ensure immudb_password is declared in:
+       1. docker-compose.yml secrets: block
+       2. orp-engine service secrets: list
+       3. ./secrets/immudb_password.txt exists on host"
+fi
+
+if [ ! -s "${SECRET}" ]; then
+    die "Docker secret is empty: ${SECRET}
+     Write a non-empty password to ./secrets/immudb_password.txt"
+fi
+
+ok "Docker secret found → ${SECRET}"
+
+info "Validating PKI material..."
+
+for CERT in \
+    /pki/ca/ca.crt \
+    /pki/engine/engine.crt \
+    /pki/engine/engine.key
+do
+    if [ ! -f "${CERT}" ]; then
+        die "PKI file missing: ${CERT}
+     pki-init may not have completed. Check:
+       docker compose logs pki-init"
+    fi
+done
+
+ok "PKI material found → /pki/ca, /pki/engine"
+
+info "Validating records volume..."
+
+RECORDS_DIR="${GITHUB_REPO_PATH:-/app/records}"
+
+mkdir -p "${RECORDS_DIR}" 2>/dev/null || true
+
+ok "Records directory ready → ${RECORDS_DIR}"
+
+info "Pre-flight complete — starting gunicorn..."
+printf "\n"
+
+exec "$@"
+FROM python:3.12-slim-bookworm
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    ORP_CONTAINER_MODE=1 \
+    GNUPGHOME=/dev/shm/gnupg
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    tesseract-ocr \
+    poppler-utils \
+    libmagic1 \
+    gnupg \
+    curl \
+    fonts-dejavu-core \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+# 1. Create users and groups while still ROOT
+RUN groupadd -r -g 1001 appgroup && \
+    useradd -r -u 1001 -g appgroup -d /app -s /usr/sbin/nologin appuser && \
+    groupadd -g 8000 pkireaders && \
+    usermod -aG pkireaders appuser
+
+WORKDIR /app
+
+# 2. Install dependencies
+COPY requirements.txt .
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt
+
+# 3. Copy application files
+COPY . .
+COPY entrypoint.sh /entrypoint.sh
+
+# 4. Finalize permissions and directories
+RUN chmod +x /entrypoint.sh && \
+    mkdir -p /app/logs /app/temp /app/repo/docs && \
+    chown -R appuser:appgroup /app /entrypoint.sh
+
+# 5. Switch to non-root user LAST
+USER appuser
+
+EXPOSE 8000
+
+ENTRYPOINT ["/entrypoint.sh"]
+CMD ["gunicorn", "--bind", "0.0.0.0:8000", "--workers", "2", "--threads", "4", "--worker-tmp-dir", "/dev/shm", "--timeout", "120", "main:app"]
+#------------------------------------------------------------------#
+###################### requirements.txt ############################
+#------------------------------------------------------------------#
+
+# ── SECURITY HARDENING ───────────────────────────────────────────
+Flask-WTF==1.3.0
+Flask-Limiter==4.1.1
+
+# ── OBSERVABILITY ────────────────────────────────────────────────
+python-json-logger==4.1.0
+
+# ── TESTING (dev-only) ───────────────────────────────────────────
+pytest==9.0.3
+pytest-cov==7.1.0
+pytest-mock==3.15.1
+
+# ── SECURITY SCANNING (dev-only) ─────────────────────────────────
+pip-audit==2.10.0
+
+# ── WSGI server ──────────────────────────────────────────────────
+gunicorn==25.3.0
+
+# ── Web framework ────────────────────────────────────────────────
+Flask==3.1.3
+
+# ── PDF processing ───────────────────────────────────────────────
+pypdf==6.10.2
+reportlab==4.4.10
+
+# ── QR code generation ───────────────────────────────────────────
+qrcode==8.2
+Pillow==12.2.0
+
+# ── Cryptography ─────────────────────────────────────────────────
+python-gnupg==0.5.6
+
+# ── Immutable database client ────────────────────────────────────
+immudb-py==1.5.0
+
+# ── Environment & timezone ───────────────────────────────────────
+python-dotenv==1.2.2
+pytz==2026.1.post1
+
+# ── OCR & DOCUMENT INTELLIGENCE ──────────────────────────────────
+pytesseract==0.3.13
+pdf2image==1.17.0
+opencv-python-headless==4.12.0.88
+numpy>=2.2,<2.3
+orp@DESKTOP-LPJOLR4:~/orp-v1.0/orp-engine$
+
+orp@DESKTOP-LPJOLR4:~/orp-v1.0$ ls -la pki
+total 16
+drwxr-xr-x 2 orp orp 4096 May  7 19:12 .
+drwxr-xr-x 8 orp orp 4096 May  7 21:39 ..
+-rw-r--r-- 1 orp orp  268 May  7 19:09 Dockerfile
+-rwxr-xr-x 1 orp orp 4055 May  7 19:05 entrypoint.sh
+orp@DESKTOP-LPJOLR4:~/orp-v1.0$ cat pki/Dockerfile pki/entrypoint.sh
+FROM alpine:3.21
+
+RUN apk add --no-cache openssl ca-certificates && \
+    mkdir -p /pki/ca /pki/nginx /pki/engine /pki/immudb
+
+RUN addgroup -g 8000 pkireaders
+
+COPY entrypoint.sh /entrypoint.sh
+
+RUN chmod +x /entrypoint.sh
+
+WORKDIR /pki
+
+ENTRYPOINT ["/entrypoint.sh"]
+#!/bin/sh
+set -eu
+
+GREEN='\033[0;32m'; CYAN='\033[0;36m'; RED='\033[0;31m'; NC='\033[0m'
+ok()   { printf "${GREEN}[✔]${NC} %s\n" "$1"; }
+info() { printf "${CYAN}[*]${NC} %s\n" "$1"; }
+die()  { printf "${RED}[✘]${NC} %s\n" "$1" >&2; exit 1; }
+
+# --- CONFIGURATION ---
+CA_DAYS=3650
+SVC_DAYS=825
+CLIENT_DAYS=365
+CA_BITS=4096
+SVC_BITS=2048
+SUBJ_BASE="/C=XX/O=OpenResPublica/OU=ORPv1.0"
+
+# --- SECRET HANDLING ---
+if [ -f /run/secrets/operator_p12_password ]; then
+    P12_PASS=$(tr -d '\r\n' < /run/secrets/operator_p12_password)
+else
+    P12_PASS="orp-dev-only-change-this"
+    printf "${RED}[!]${NC} WARNING: operator_p12_password secret not found.\n" >&2
+fi
+
+# --- IDEMPOTENCY CHECK ---
+if [ -f /pki/ca/ca.crt ]; then
+    ok "PKI already initialised — CA found. Skipping generation."
+    exit 0
+fi
+
+info "PKI not yet initialised — beginning generation..."
+
+# --- ROOT CA ---
+info "Generating Root CA..."
+openssl genrsa -out /pki/ca/ca.key ${CA_BITS} 2>/dev/null
+
+openssl req -new -x509 \
+    -days   "${CA_DAYS}" \
+    -key    /pki/ca/ca.key \
+    -out    /pki/ca/ca.crt \
+    -subj   "${SUBJ_BASE}/CN=ORP Sovereign Root CA" \
+    -addext "basicConstraints=critical,CA:TRUE,pathlen:0" \
+    -addext "keyUsage=critical,keyCertSign,cRLSign"
+
+chmod 640 /pki/ca/ca.key
+chown root:8000 /pki/ca/ca.key || true
+chmod 644 /pki/ca/ca.crt
+ok "Root CA generated."
+
+# --- CERTIFICATE GENERATION FUNCTION ---
+gen_cert() {
+    LABEL="$1" DIR="$2" CN="$3" SAN="$4" EKU="$5"
+    info "─── Issuing: ${LABEL} ───"
+
+    openssl genrsa -out "${DIR}/${LABEL}.key" "${SVC_BITS}" 2>/dev/null
+
+    openssl req -new \
+        -key    "${DIR}/${LABEL}.key" \
+        -out    "${DIR}/${LABEL}.csr" \
+        -subj   "${SUBJ_BASE}/CN=${CN}" \
+        -addext "subjectAltName=${SAN}" \
+        -addext "extendedKeyUsage=${EKU}" \
+        -addext "basicConstraints=critical,CA:FALSE" \
+        -addext "keyUsage=critical,digitalSignature,keyEncipherment"
+
+    openssl x509 -req -days "${SVC_DAYS}" \
+        -in "${DIR}/${LABEL}.csr" \
+        -CA /pki/ca/ca.crt -CAkey /pki/ca/ca.key -CAcreateserial \
+        -out "${DIR}/${LABEL}.crt" -copy_extensions copy 2>/dev/null
+
+    rm -f "${DIR}/${LABEL}.csr"
+    chmod 640 "${DIR}/${LABEL}.key"
+    chown root:8000 "${DIR}/${LABEL}.key" || true
+    chmod 644 "${DIR}/${LABEL}.crt"
+    ok "[${LABEL}] Verified."
+}
+
+# --- ISSUE SERVICE CERTS ---
+gen_cert "immudb" "/pki/immudb" "orp-immudb" "DNS:orp_immudb,DNS:localhost,IP:127.0.0.1" "serverAuth"
+gen_cert "engine" "/pki/engine" "orp-engine" "DNS:orp_engine,DNS:localhost,IP:127.0.0.1" "clientAuth"
+gen_cert "nginx"  "/pki/nginx"  "orp-nginx"  "DNS:orp_nginx,DNS:localhost,IP:127.0.0.1"  "serverAuth"
+
+# --- OPERATOR CLIENT BUNDLE ---
+info "─── OPERATOR CLIENT CERTIFICATE ───"
+mkdir -p /pki/clients
+openssl genrsa -out /pki/clients/operator01.key "${SVC_BITS}" 2>/dev/null
+openssl req -new -key /pki/clients/operator01.key -out /pki/clients/operator01.csr \
+    -subj "${SUBJ_BASE}/CN=orp-operator-01" \
+    -addext "subjectAltName=email:operator01@orp.local" \
+    -addext "extendedKeyUsage=clientAuth"
+openssl x509 -req -days "${CLIENT_DAYS}" -in /pki/clients/operator01.csr \
+    -CA /pki/ca/ca.crt -CAkey /pki/ca/ca.key -CAcreateserial \
+    -out /pki/clients/operator01.crt -copy_extensions copy 2>/dev/null
+
+openssl pkcs12 -export \
+    -in /pki/clients/operator01.crt -inkey /pki/clients/operator01.key \
+    -certfile /pki/ca/ca.crt -out /pki/clients/operator01.p12 -passout "pass:${P12_PASS}"
+
+chmod 600 /pki/clients/operator01.p12
+rm -f /pki/clients/operator01.csr
+ok "Operator bundle ready."
+
+# --- PERMISSIONS AUDIT ---
+info "Running Permissions Audit..."
+FAIL=0
+for f in $(find /pki -name "*.key"); do
+    [ "$(stat -c %a $f)" = "640" ] || FAIL=1
+done
+for f in $(find /pki -name "*.crt"); do
+    [ "$(stat -c %a $f)" = "644" ] || FAIL=1
+done
+for f in $(find /pki -name "*.p12"); do
+    [ "$(stat -c %a $f)" = "600" ] || FAIL=1
+done
+
+[ "$FAIL" -eq 0 ] || die "Permissions audit failed!"
+ok "Audit passed. PKI Initialised."
+orp@DESKTOP-LPJOLR4:~/orp-v1.0$
+
+## First Boot Sequence — ORPv1.0
+
+We go one phase at a time. Each phase has a verification step before moving to the next. Never `docker compose up -d` a fresh stack blind.
+
+---
+
+## Phase 0 — Prerequisites
+
+```bash
+# Confirm Docker is running in WSL2
+docker info | grep -E "Server Version|Operating System"
+
+# Confirm you're in the project root
+ls docker-compose.yml pki/ orp-engine/ nginx/
+```
+
+---
+
+## Phase 1 — Secrets + Environment
+
+```bash
+# Create secrets directory
+mkdir -p ./secrets
+
+# Generate cryptographically random passwords — not human-chosen
+echo -n "$(openssl rand -base64 32)" > ./secrets/immudb_password.txt
+echo -n "$(openssl rand -base64 32)" > ./secrets/immudb_admin_password.txt
+echo -n "$(openssl rand -base64 32)" > ./secrets/operator_p12_password.txt
+
+# Lock them down
+chmod 600 ./secrets/*.txt
+
+# Protect from git
+echo "secrets/" >> .gitignore
+echo ".env"     >> .gitignore
+
+# Fill in your .env
+cp .env.template .env
+chmod 600 .env
+nano .env        # fill in all variables
+```
+
+Validate compose reads everything correctly before touching Docker:
+
+```bash
+docker compose config   # shows fully interpolated compose file
+                        # verify no ${VARIABLE} placeholders remain
+```
+
+> If you see any `${...}` left in the output — a variable is missing from `.env`. Fix it before continuing.
+
+---
+
+## Phase 2 — Build All Images
+
+```bash
+# Build all three custom images
+# Do this separately from up — build errors are clearer this way
+docker compose build --no-cache
+
+# Verify images exist
+docker images | grep orp
+```
+
+Expected output:
+```
+pagmata-orp-engine    latest    ...
+pagmata-pki-init      latest    ...
+pagmata-nginx-mtls    latest    ...
+```
+
+---
+
+## Phase 3 — PKI Init (run alone, verify before anything else)
+
+```bash
+# Run pki-init in isolation — nothing else depends on it yet
+docker compose run --rm pki-init
+```
+
+Watch the output line by line. You should see:
+
+```
+[*] PKI not yet initialised — beginning certificate generation
+[*] ─── ROOT CA ───────────────────────────────────────────────
+[✔] Root CA generated → /pki/ca/ca.{crt,key}
+[✔] Root CA self-verification passed
+[✔] [immudb] Certificate issued and verified
+[✔] [engine] Certificate issued and verified
+[✔] [nginx] Certificate issued and verified
+[*] ─── OPERATOR CLIENT CERTIFICATE ──────────────────────────
+[✔] [operator01] Certificate issued and verified
+[✔] [operator01] operator01.p12 ready
+[✔] 600 → /pki/ca/ca.key
+[✔] 644 → /pki/ca/ca.crt
+... (permissions audit)
+[✔] ORP PKI initialisation complete
+```
+
+Verify the volume contains what we expect:
+
+```bash
+# Inspect the PKI volume directly
+docker run --rm \
+  -v orp_pki:/pki:ro \
+  alpine:3.21 \
+  find /pki -type f | sort
+```
+
+Expected:
+```
+/pki/ca/ca.crt
+/pki/ca/ca.key
+/pki/ca/ca.srl
+/pki/clients/operator01.crt
+/pki/clients/operator01.key
+/pki/clients/operator01.p12
+/pki/engine/engine.crt
+/pki/engine/engine.key
+/pki/immudb/immudb.crt
+/pki/immudb/immudb.key
+/pki/nginx/nginx.crt
+/pki/nginx/nginx.key
+```
+
+> **If anything is missing — stop here.** Check `docker compose logs pki-init` before continuing.
+
+---
+
+## Phase 4 — Extract operator01.p12
+
+Before starting the stack, get the P12 out of the volume while pki-init is fresh:
+
+```bash
+# Copy P12 to host
+docker run --rm \
+  -v orp_pki:/pki:ro \
+  -v "$(pwd)/secrets":/out \
+  alpine:3.21 \
+  cp /pki/clients/operator01.p12 /out/operator01.p12
+
+# Confirm it exists
+ls -la ./secrets/operator01.p12
+```
+
+The P12 password is in `./secrets/operator_p12_password.txt`:
+
+```bash
+cat ./secrets/operator_p12_password.txt
+# save this — you'll need it when importing into the browser
+```
+
+---
+
+## Phase 5 — Start the Full Stack
+
+```bash
+# Start everything — compose honours depends_on ordering automatically
+docker compose up -d
+
+# Watch startup in real time
+docker compose logs -f --tail=50
+```
+
+The startup order you'll see:
+
+```
+pki-init    → exits 0 (already ran in Phase 3, idempotence check fires)
+immudb      → initialising database...
+immudb      → ready to accept connections
+orp-engine  → [*] Validating Docker secrets...
+orp-engine  → [*] GPG home ready → /dev/shm/gnupg
+orp-engine  → immudb connection attempt 1/5...
+orp-engine  → Vault connected
+orp-engine  → [Gunicorn booted]
+nginx-mtls  → [*] Validating PKI assets...
+nginx-mtls  → [*] Rendering nginx template...
+nginx-mtls  → nginx: configuration file test successful
+nginx-mtls  → [*] Starting nginx...
+```
+
+Verify all services are healthy:
+
+```bash
+docker compose ps
+```
+
+Expected:
+```
+NAME           STATUS                   PORTS
+orp_pki_init   exited (0)               —
+orp_immudb     running (healthy)        —
+orp_engine     running (healthy)        —
+orp_nginx      running                  0.0.0.0:9443->9443/tcp
+```
+
+> Any service showing `unhealthy` or `restarting` — check its logs before continuing.
+
+---
+
+## Phase 6 — Import GPG Key
+
+This is the step that enables record signing. Without it, `sign_json_data()` silently returns `None`.
+
+```bash
+# Export your GPG private key on the host
+gpg --export-secret-keys operator01@orp.local > /tmp/orp_operator.gpg
+
+# Import it into the running container's RAM-disk GPG home
+cat /tmp/orp_operator.gpg | \
+  docker exec -i orp_engine \
+  gpg --homedir /dev/shm/gnupg --import
+
+# Verify the key is visible
+docker exec orp_engine \
+  gpg --homedir /dev/shm/gnupg --list-secret-keys
+
+# Clean up
+rm /tmp/orp_operator.gpg
+```
+
+> **Important**: `/dev/shm/gnupg` is ephemeral — it lives in RAM and disappears when the container stops. You must re-import the GPG key after every container restart. This is by design (key never touches disk inside the container). A future improvement is auto-importing from a Docker secret in `entrypoint.sh`.
+
+---
+
+## Phase 7 — Import operator01.p12 into Browser
+
+**Chrome/Chromium:**
+```
+Settings → Privacy and security → Security
+→ Manage certificates → Import
+→ Select ./secrets/operator01.p12
+→ Enter password from ./secrets/operator_p12_password.txt
+```
+
+**Firefox:**
+```
+Settings → Privacy & Security → Certificates
+→ View Certificates → Your Certificates → Import
+→ Select ./secrets/operator01.p12
+→ Enter password
+```
+
+---
+
+## Phase 8 — Test the Stack
+
+```bash
+# Test nginx is up (no browser cert — expect 403 from @cert_error handler)
+curl -k https://localhost:9443/health
+# Expected: HTTP 403 with the "Sovereign Identity Required" page
+
+# Test with cert (from host — requires curl with P12 support)
+curl -k \
+  --cert-type P12 \
+  --cert ./secrets/operator01.p12:"$(cat ./secrets/operator_p12_password.txt)" \
+  https://localhost:9443/health
+# Expected: {"status":"ok","service":"orp-nginx"}
+
+# Test orp-engine health directly (internal only — must exec into network)
+docker exec orp_engine curl -sf http://localhost:8000/health
+# Expected: {"status":"healthy","timestamp":"..."}
+```
+
+Open the browser at `https://localhost:9443` — the browser presents `operator01.p12` automatically. The ORP portal should load.
+
+---
+
+## Operational notes before you run this
+
+Two things to know about the running stack:
+
+**GPG re-import on restart** — documented above. For now it's a manual step. If you're doing frequent restarts during development, keep a small script:
+
+```bash
+# re-import-gpg.sh
+gpg --export-secret-keys operator01@orp.local | \
+  docker exec -i orp_engine \
+  gpg --homedir /dev/shm/gnupg --import
+echo "GPG key imported"
+```
+
+**Stopping cleanly:**
+
+```bash
+docker compose down          # stops containers, preserves volumes
+docker compose down -v       # ← DESTROYS volumes including PKI + immudb ledger
+                             #   only use this to reset completely
+```
+
+Ready to run Phase 0? Or do you want to walk through any phase in more detail first?
+
+# ORP v1.0 — OpenResPublica Sovereign Stack
+## Operational Handbook & Progress Tracker
+
+> **Classification:** Internal — Barangay Operations  
+> **Stack:** nginx-mTLS → Flask/Gunicorn → immudb  
+> **Status:** Active Development — Phase 3 (First Boot)
+
+---
+
+## Table of Contents
+
+1. [Architecture Overview](#1-architecture-overview)
+2. [Security Model](#2-security-model)
+3. [Prerequisites](#3-prerequisites)
+4. [First Boot Sequence](#4-first-boot-sequence)
+5. [Day-to-Day Operations](#5-day-to-day-operations)
+6. [Troubleshooting](#6-troubleshooting)
+7. [Known Issues & Roadmap](#7-known-issues--roadmap)
+8. [Progress Tracker](#8-progress-tracker)
+
+---
+
+## 1. Architecture Overview
+
+```
+Browser (Operator)
+      │
+      │ HTTPS :9443  (mTLS — operator01.p12 required)
+      ▼
+┌─────────────────────────────┐
+│  nginx-mtls  (orp_nginx)    │  alpine:3.21
+│  Edge Gateway               │  frontend_net + backend_net
+│  - TLS termination          │
+│  - Client cert verification │
+└──────────────┬──────────────┘
+               │ http (internal Docker DNS)
+               │ backend_net (internal: true)
+┌──────────────┴──────────────┐
+│  orp-engine  (orp_engine)   │  python:3.12-slim-bookworm
+│  Flask / Gunicorn :8000     │  backend_net only
+│  - PDF verification         │
+│  - OCR + classification     │
+│  - GPG signing              │
+│  - immudb stamping          │
+└──────────────┬──────────────┘
+               │ gRPC :3322 (mTLS)
+┌──────────────┴──────────────┐
+│  immudb      (orp_immudb)   │  codenotary/immudb:1.10.0
+│  Append-Only Truth Layer    │  backend_net only
+│  - Tamper-evident ledger    │
+│  - SHA256 hash anchoring    │
+└─────────────────────────────┘
+
+┌─────────────────────────────┐
+│  pki-init    (orp_pki_init) │  alpine:3.21 — ONE-SHOT
+│  CA Bootstrap               │  network_mode: none
+│  - Root CA generation       │
+│  - Service cert issuance    │
+│  - Operator P12 bundle      │
+└─────────────────────────────┘
+
+Volumes:
+  orp_pki        → PKI material (pki-init writes, others read-only)
+  orp_immudb_data → Persistent ledger
+  orp_records    → Stamped JSON records + control_number.txt
+
+Networks:
+  orp_frontend   → nginx ↔ outside world
+  orp_backend    → nginx ↔ orp-engine ↔ immudb (internal: true)
+```
+
+---
+
+## 2. Security Model
+
+### Isolation Layers
+
+| Layer | Mechanism | What it prevents |
+|---|---|---|
+| Network | `internal: true` on backend_net | Containers cannot phone home |
+| Ingress | Single port :9443 via nginx | No direct backend access |
+| mTLS (browser→nginx) | operator01.p12 | Unauthorised portal access |
+| mTLS (engine→immudb) | engine.crt clientAuth | Unauthorised DB writes |
+| Secrets | Docker secrets (tmpfs) | Passwords in env vars / logs |
+| Users | Non-root containers | Container escape blast radius |
+| PKI | Offline CA (network_mode: none) | CA key exposure during issuance |
+| Audit | immudb append-only | Tamper-evident record history |
+
+### Secret Inventory
+
+| Secret | Path in container | Used by |
+|---|---|---|
+| immudb_password | `/run/secrets/immudb_password` | orp-engine |
+| immudb_admin_password | `/run/secrets/immudb_admin_password` | immudb (first boot) |
+| operator_p12_password | `/run/secrets/operator_p12_password` | pki-init |
+| flask_secret_key | `/run/secrets/flask_secret_key` | orp-engine |
+
+### PKI Layout
+
+```
+/pki/
+├── ca/
+│   ├── ca.crt          644  Trust anchor — all services verify against this
+│   └── ca.key          600  Root CA private key — never leaves pki-init
+├── nginx/
+│   ├── nginx.crt       644  nginx server identity (presented to browsers)
+│   └── nginx.key       644  nginx private key
+├── engine/
+│   ├── engine.crt      644  orp-engine client identity (presented to immudb)
+│   └── engine.key      644  orp-engine private key
+├── immudb/
+│   ├── immudb.crt      644  immudb server identity
+│   └── immudb.key      644  immudb private key
+└── clients/
+    ├── operator01.crt  644  Operator certificate
+    ├── operator01.key  600  Operator private key
+    └── operator01.p12  600  Browser import bundle (cert + key + CA chain)
+```
+
+---
+
+## 3. Prerequisites
+
+### System Requirements
+- WSL2 with Ubuntu 22.04+
+- Docker Engine (not Docker Desktop)
+- 4GB RAM minimum, 8GB recommended (tesseract + OCR is memory-heavy)
+- 10GB disk space for images + volumes
+
+### Verify Docker Installation
+```bash
+docker info | grep -E "Server Version|Operating System"
+docker compose version
+```
+
+### Required Files Before First Boot
+```bash
+# Verify project structure
+ls docker-compose.yml pki/ orp-engine/ nginx/ secrets/
+
+# Verify secrets exist and are non-empty
+for f in secrets/*.txt; do
+  [ -s "$f" ] && echo "✔ $f" || echo "✘ $f is empty!"
+done
+
+# Verify .env is populated
+grep -c "=$" .env  # should be 0 (no empty values)
+```
+
+---
+
+## 4. First Boot Sequence
+
+> Follow phases in order. Do not skip verification steps.
+
+### Phase 0 — Generate Secrets (once only)
+
+```bash
+mkdir -p ./secrets
+
+echo -n "$(openssl rand -base64 32)" > ./secrets/immudb_password.txt
+echo -n "$(openssl rand -base64 32)" > ./secrets/immudb_admin_password.txt
+echo -n "$(openssl rand -base64 32)" > ./secrets/operator_p12_password.txt
+echo -n "$(openssl rand -hex 32)"    > ./secrets/flask_secret_key.txt
+
+chmod 600 ./secrets/*.txt
+echo "secrets/" >> .gitignore
+echo ".env"     >> .gitignore
+```
+
+### Phase 1 — Configure Environment
+
+```bash
+cp .env.template .env
+chmod 600 .env
+nano .env   # fill in all values
+
+# Validate — no substitution placeholders should remain
+docker compose config | grep -E '\$\{' && echo "MISSING VARS" || echo "✔ All vars resolved"
+```
+
+### Phase 2 — Build Images
+
+```bash
+# Build all custom images (pki-init, orp-engine, nginx-mtls)
+docker compose build --no-cache
+
+# Verify images
+docker images | grep -E "pki|orp|nginx"
+```
+
+### Phase 3 — PKI Initialisation
+
+```bash
+# Run pki-init in isolation — verify before anything else starts
+docker compose run --rm pki-init
+
+# Expected output ends with:
+# [✔] Audit passed. PKI Initialised.
+
+# Verify PKI volume contents
+docker run --rm -v orp_pki:/pki:ro alpine:3.21 \
+  sh -c "find /pki -type f | sort && echo '---' && ls -lR /pki"
+```
+
+Expected file permissions:
+```
+ca/ca.key      → 600 (root only — never read by services)
+*.key (others) → 644 (readable by service containers)
+*.crt          → 644 (public certificates)
+*.p12          → 600 (operator bundle — contains private key)
+```
+
+**If permissions are wrong:** Delete the volume and re-run:
+```bash
+docker volume rm orp_pki
+docker compose run --rm pki-init
+```
+
+### Phase 4 — Extract Operator Bundle
+
+```bash
+# Copy P12 to host before starting full stack
+docker run --rm \
+  -v orp_pki:/pki:ro \
+  -v "$(pwd)/secrets":/out \
+  alpine:3.21 \
+  cp /pki/clients/operator01.p12 /out/operator01.p12
+
+echo "P12 password: $(cat ./secrets/operator_p12_password.txt)"
+# Save this password — needed for browser import
+```
+
+### Phase 5 — Start Full Stack
+
+```bash
+docker compose up -d
+
+# Watch startup sequence in real time
+docker compose logs -f --tail=50
+```
+
+Expected healthy state:
+```bash
+docker compose ps
+# NAME           STATUS              PORTS
+# orp_pki_init   exited (0)          —
+# orp_immudb     running (healthy)   —
+# orp_engine     running (healthy)   —
+# orp_nginx      running             0.0.0.0:9443->9443/tcp
+```
+
+### Phase 6 — Import GPG Key
+
+> Required before any document signing works.
+> Must be repeated after every container restart (key lives in RAM).
+
+```bash
+# Export GPG key from host
+gpg --export-secret-keys your@email.com > /tmp/orp_gpg.gpg
+
+# Import into running container
+cat /tmp/orp_gpg.gpg | \
+  docker exec -i orp_engine \
+  gpg --homedir /dev/shm/gnupg --import
+
+# Verify
+docker exec orp_engine gpg --homedir /dev/shm/gnupg --list-secret-keys
+
+# Clean up
+rm /tmp/orp_gpg.gpg
+```
+
+### Phase 7 — Browser Certificate Import
+
+**Chrome / Chromium:**
+```
+Settings → Privacy and security → Security
+→ Manage certificates → Import
+→ Select: ./secrets/operator01.p12
+→ Password: (from ./secrets/operator_p12_password.txt)
+```
+
+**Firefox:**
+```
+Settings → Privacy & Security → Certificates → View Certificates
+→ Your Certificates → Import
+→ Select: ./secrets/operator01.p12
+→ Password: (from ./secrets/operator_p12_password.txt)
+```
+
+### Phase 8 — Smoke Tests
+
+```bash
+# Test 1: No cert → expect 403 (mTLS rejection page)
+curl -k https://localhost:9443/health
+# Expected: HTTP 403, "Sovereign Identity Required"
+
+# Test 2: With cert → expect 200
+curl -k \
+  --cert-type P12 \
+  --cert ./secrets/operator01.p12:"$(cat ./secrets/operator_p12_password.txt)" \
+  https://localhost:9443/health
+# Expected: {"status":"ok","service":"orp-nginx"}
+
+# Test 3: orp-engine direct health (internal only)
+docker exec orp_engine curl -sf http://localhost:8000/health
+# Expected: {"status":"healthy","timestamp":"..."}
+
+# Test 4: immudb reachable from engine (via backend_net)
+docker exec orp_engine \
+  sh -c "echo > /dev/tcp/orp_immudb/3322" 2>/dev/null && \
+  echo "immudb reachable" || echo "immudb unreachable"
+```
+
+Then open `https://localhost:9443` in the browser with operator01.p12 imported. The ORP portal should load.
+
+---
+
+## 5. Day-to-Day Operations
+
+### Starting the Stack
+```bash
+docker compose up -d
+# Then re-import GPG key (Phase 6) — always required after restart
+```
+
+### Stopping the Stack
+```bash
+docker compose down          # preserves all volumes (data safe)
+docker compose down -v       # ⚠ DESTROYS ALL DATA — development reset only
+```
+
+### Viewing Logs
+```bash
+docker compose logs -f                    # all services
+docker compose logs -f orp-engine         # Flask/Gunicorn only
+docker compose logs -f nginx-mtls         # nginx access + error logs
+docker compose logs -f immudb             # immudb only
+```
+
+### Checking Service Health
+```bash
+docker compose ps
+docker inspect orp_engine | grep -A5 '"Health"'
+```
+
+### Re-importing GPG Key After Restart
+```bash
+# Save this as re-import-gpg.sh in your home directory (NOT in project dir)
+gpg --export-secret-keys your@email.com | \
+  docker exec -i orp_engine \
+  gpg --homedir /dev/shm/gnupg --import
+echo "[✔] GPG key imported"
+```
+
+### Viewing Stamped Records
+```bash
+docker run --rm -v orp_records:/data alpine:3.21 \
+  sh -c "ls -la /data/docs/records/ | tail -20"
+```
+
+### Checking immudb Ledger
+```bash
+# Verify a specific hash was anchored
+HASH="your_sha256_hash_here"
+docker exec orp_engine \
+  python3 -c "
+from immudb.client import ImmudbClient
+import os
+c = ImmudbClient('orp_immudb:3322')
+c.login('orp_operator', open('/run/secrets/immudb_password').read().strip())
+r = c.get('$HASH'.encode())
+print('Found:', r.value)
+"
+```
+
+### Rotating Operator Certificate (Annual)
+```bash
+# 1. Stop the stack
+docker compose down
+
+# 2. Delete only the pki volume (preserves immudb and records)
+docker volume rm orp_pki
+
+# 3. Restart — pki-init will issue new certificates
+docker compose up -d
+
+# 4. Extract and distribute new operator01.p12
+# 5. Old operator imports new P12 into browser (removes old cert first)
+```
+
+---
+
+## 6. Troubleshooting
+
+### pki-init exits with error
+
+```bash
+docker compose logs pki-init
+```
+
+| Error | Cause | Fix |
+|---|---|---|
+| `Permission denied` on secret | Old pki volume with wrong permissions | `docker volume rm orp_pki && docker compose run --rm pki-init` |
+| `CA already initialised` | Idempotence check — normal on restart | Not an error — certs are intact |
+| `Permissions audit failed` | Key permissions wrong | Delete volume, fix entrypoint.sh, re-run |
+
+### immudb unhealthy
+
+```bash
+docker compose logs immudb
+```
+
+| Error | Cause | Fix |
+|---|---|---|
+| `permission denied` on `.key` | Key file is chmod 600, immudb user can't read | Fix to chmod 644 in pki/entrypoint.sh, delete pki vol |
+| `failed to load cert/key pair` | Cert/key mismatch (wrong CA) | Delete pki vol, re-run pki-init |
+| healthcheck timeout | immudb slow to initialise | Increase `start_period` to 40s |
+
+### orp-engine restart loop
+
+```bash
+docker compose logs orp-engine
+```
+
+| Error | Cause | Fix |
+|---|---|---|
+| `Docker secret not found` | Secret file missing on host | Create `./secrets/immudb_password.txt` |
+| `GNUPGHOME and OPERATOR_GPG_EMAIL required` | Missing env var | Check `.env` and `docker compose config` |
+| `immudb unreachable after all retries` | immudb not healthy | Wait for immudb healthcheck to pass first |
+| `Missing Flask secret key` | `flask_secret_key.txt` empty | Re-generate: `openssl rand -hex 32 > ./secrets/flask_secret_key.txt` |
+
+### nginx 495/496 (mTLS rejection)
+
+Browser shows "Sovereign Identity Required":
+- operator01.p12 not imported into browser → import it
+- Wrong P12 password used during import → use `cat ./secrets/operator_p12_password.txt`
+- Certificate expired → rotate (see Day-to-Day Operations)
+
+### GPG signing silent failure
+
+Records are written but `data_signature` is null:
+```bash
+# Check GPG key is present
+docker exec orp_engine gpg --homedir /dev/shm/gnupg --list-secret-keys
+
+# If empty — re-import (Phase 6)
+# /dev/shm is a RAM disk — key is lost on every container restart
+```
+
+### Full Reset (Development Only)
+
+```bash
+docker compose down -v          # destroy all volumes
+docker rmi $(docker images | grep orp | awk '{print $3}')  # remove images
+docker compose build --no-cache
+# Then follow First Boot Sequence from Phase 0
+```
+
+---
+
+## 7. Known Issues & Roadmap
+
+### Current Limitations
+
+| Issue | Impact | Planned Fix |
+|---|---|---|
+| GPG key re-import on restart | Operational friction | Auto-import from Docker secret in entrypoint.sh |
+| Git push not containerised | Records not published to GitHub automatically | GitHub deploy key + CI/CD sidecar |
+| immudb admin password single-use | Admin creds persist beyond first boot | immudb-init container to create orp_operator user + revoke admin |
+| Single operator certificate | No multi-operator support | Operator cert issuance workflow (multiple P12 bundles) |
+| No certificate revocation | Stolen operator cert valid until expiry | CRL or OCSP implementation |
+| Limiter in-memory storage | Rate limits reset on restart | Redis sidecar for persistent rate limiting |
+
+### Security Debt
+
+```
+Priority  Item
+────────  ──────────────────────────────────────────────────────
+HIGH      immudb: create orp_operator user, disable superadmin
+HIGH      GPG key: mount as Docker secret, auto-import in entrypoint.sh
+MEDIUM    FLASK_SECRET_KEY: already a Docker secret ✓ (done)
+MEDIUM    Certificate validity monitoring (alert before expiry)
+LOW       Structured JSON logging (python-json-logger is installed)
+LOW       Docker image vulnerability scanning (Trivy in CI)
+```
+
+### Roadmap
+
+```
+v1.0  ← Current
+  ✓ mTLS edge gateway
+  ✓ PDF verification + OCR + classification
+  ✓ immudb tamper-evident anchoring
+  ✓ GPG-signed JSON records
+  ✓ Hardened container stack
+
+v1.1  → Next
+  □ immudb operator user setup
+  □ GPG auto-import from Docker secret
+  □ GitHub deploy key for record publishing
+  □ Trivy image scanning in build pipeline
+
+v1.2
+  □ Multi-operator certificate issuance
+  □ Certificate expiry monitoring
+  □ Structured JSON logging
+  □ Redis rate limiter
+```
+
+---
+
+## 8. Progress Tracker
+
+### DevSecOps Learning Milestones
+
+| Milestone | Concept | Status |
+|---|---|---|
+| Docker fundamentals | Image, container, layer model | ✅ |
+| Dockerfile hardening | Non-root user, minimal base, pinned versions | ✅ |
+| Multi-service orchestration | docker-compose.yml, depends_on, healthchecks | ✅ |
+| Network segmentation | bridge, internal: true, expose vs ports | ✅ |
+| Secret management | Docker secrets, tmpfs, /proc/environ risk | ✅ |
+| PKI fundamentals | CA, CSR, cert chain, mTLS handshake | ✅ |
+| Certificate lifecycle | Validity periods, pathlen, EKU, SANs | ✅ |
+| Container escape model | Root risk, daemon model, blast radius | ✅ |
+| Least privilege containers | USER directive, UID consistency, capabilities | ✅ |
+| Volume security | Seeding, permissions across containers | ✅ |
+| Idempotent init containers | One-shot pattern, trust chain preservation | ✅ |
+| Attack surface reduction | Alpine vs Debian, package minimisation | ✅ |
+| Signal handling | exec "$@", PID 1, SIGTERM propagation | ✅ |
+| Podman comparison | Daemon model vs daemonless, rootless | ✅ |
+| First boot operations | Phase-by-phase stack initialisation | 🔄 In Progress |
+| immudb integration | Append-only ledger, gRPC, token auth | 🔄 In Progress |
+| GPG signing pipeline | Key management in containers, RAM-only | ⏳ Pending |
+| CI/CD pipeline | GitHub Actions, Trivy, deploy keys | ⏳ Pending |
+
+### Build Status
+
+```
+Component              Built    Tested    Hardened
+─────────────────────  ───────  ────────  ────────
+pki/Dockerfile         ✅       🔄        ✅
+pki/entrypoint.sh      ✅       🔄        🔄  ← chmod 644 fix pending
+orp-engine/Dockerfile  ✅       ⏳        ✅
+orp-engine/entrypoint  ✅       ⏳        ✅
+orp-engine/main.py     ✅       ⏳        ✅
+nginx/Dockerfile       ✅       ⏳        ✅
+nginx/nginx.conf       ✅       ⏳        ✅
+nginx/orp_engine.conf  ✅       ⏳        ✅
+docker-compose.yml     ✅       🔄        ✅
+```
+
+### Immediate Action Items
+
+```
+[ ] Fix pki/entrypoint.sh: chmod 644 on service keys (not CA key)
+[ ] docker volume rm orp_pki
+[ ] docker compose run --rm pki-init   (verify: all keys 644)
+[ ] docker compose up -d               (verify: all services healthy)
+[ ] Import operator01.p12 into browser
+[ ] Import GPG key into orp_engine
+[ ] Test upload of a barangay document
+```
+
+---
+
+*ORP v1.0 — Built with DevSecOps principles, one layer at a time.*
+*Sovereign identity. Immutable truth. Zero trust.*
